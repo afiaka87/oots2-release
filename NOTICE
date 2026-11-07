@@ -1,0 +1,12 @@
+The mods in this repository are original work licensed under the MIT License (see LICENSE).
+
+They are built as exlaunch modules. exlaunch (https://github.com/shadowninja108/exlaunch) is
+licensed under the GNU General Public License v2.0 and is not included here; you obtain it
+separately when building. A compiled module (subsdk9) therefore contains exlaunch code, and that
+portion of any binary is distributed under GPL-2.0 terms. This repository provides the source for
+the mods' own code; exlaunch's source is available from its upstream repository.
+
+Builds use devkitPro's devkitA64 toolchain.
+
+No Nintendo game assets or code are included. The offsets and instruction words in the source
+identify locations in the game's own executable and are used to verify the supported version.

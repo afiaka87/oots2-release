@@ -1,0 +1,7 @@
+Mirror Mode's original source is MIT licensed, copyright Clay Mullis.
+
+The compiled module includes exlaunch, licensed under GPL-2.0.
+Upstream source: https://github.com/shadowninja108/exlaunch
+
+Native builds use devkitPro/devkitA64.
+No Nintendo game assets are distributed in this package.

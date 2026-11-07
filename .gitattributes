@@ -1,0 +1,6 @@
+# Store and check out LF everywhere so Windows and Linux see identical bytes.
+* text=auto eol=lf
+
+# Windows batch files are the one format that requires CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
