@@ -23,6 +23,10 @@ It comes in two versions. Install one of them, not both:
 - While the menu is open, A, B, X, Y and the D-pad go only to the menu. L3 never reaches the game
   while the mod runs.
 - A warp waits while a scene plays or the game is still loading; the status line says why.
+- The list shows a small picture beside each area, and a large picture of the area under the cursor
+  sits on the right with its name and number of spots.
+
+![The menu](assets/menu-preview.png)
 
 The lists hold 214 spots, all points where the game itself places Link in its map files. They are
 in `src/program/destinations.inc`, generated from the game's map files by a script that is not
@@ -66,6 +70,17 @@ Both versions use `subsdk5`, so either can run with a mod that supplies `subsdk9
 Graphics-Menu). Neither can be combined with the other version or with another mod that supplies
 `subsdk5`.
 
+## The menu's pictures and fonts
+
+The area pictures are illustrations made with an image generator (Magnific, Z-Image model) from a
+short description of each place, written without the game's name; `assets/prompts.json` holds the
+descriptions. They suggest what each place looks like and are not the game's art: no image from the
+game was used to make them. Each picture is named after its area's `GameBancParam` name, and an area
+without a picture shows an empty frame.
+
+The text uses Inter and Cinzel (SIL Open Font License 1.1), drawn ahead of time into anti-aliased
+glyphs; `tools/fonts/` holds the fonts and their licenses.
+
 ## Known issues
 
 - Some spots are in dungeons and boss rooms. A boss that is not yet beaten may start its fight when
@@ -80,13 +95,20 @@ Graphics-Menu). Neither can be combined with the other version or with another m
 
 ## Source and dependencies
 
-The public source is `src/program/` under the MIT License, except `font8x8.hpp`, which is
-font8x8_basic by Daniel Hepper (public domain). It is source only and is not a standalone build
-tree. Native builds require devkitA64 and exlaunch configured for module name `ootfasttravel`,
+The public source is `src/program/` under the MIT License, except `ext/picojpeg.c` and
+`ext/picojpeg.h`, which are picojpeg by Rich Geldreich (public domain). It is source only and is not a
+standalone build tree. Native builds require devkitA64 and exlaunch configured for module name `ootfasttravel`,
 fake heap enabled, the SVC debug-string logger, `HeapSize 0x10000`, `JitSize 0x1000`,
 `InlinePoolSize 0x1000`, `LogBufferSize 512`, an empty relocation table set, one default game
 version and subsdk slot 5. The Visited version is the same build with `FAST_TRAVEL_VISITED_ONLY=1`
 defined, which enables `visits.cpp`.
+
+The menu's pictures and glyphs are built into the module. `python tools/make_assets.py assets/areas
+<exlaunch>/data/assets.bin` writes them into exlaunch's `data/` folder, which its build links in with
+bin2o; the module reads the blob between `assets_bin` and `assets_bin_end` (current devkitPro bin2s
+puts the size only in the generated header). The module is then about 3.3 MB, and the panel image,
+its CPU copy and the decoded pictures take about 6.5 MB of the module's own memory. `tools/preview.cpp`
+draws the panel on a PC from the same code, to check the layout without the game.
 
 Released modules (`subsdk5`, SHA-256):
 
