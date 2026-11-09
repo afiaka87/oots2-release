@@ -1,11 +1,7 @@
 Fast Travel's original source is MIT licensed, copyright Clay Mullis.
 
-src/program/font8x8.hpp is font8x8_basic by Daniel Hepper, from the IBM PC BIOS font, in the
-public domain.
+src/program/font8x8.hpp is font8x8_basic by Daniel Hepper, from the IBM PC BIOS font, in the public domain.
 
-The compiled module includes exlaunch, licensed under GPL-2.0.
-Upstream source: https://github.com/shadowninja108/exlaunch
+The v1.2.0 pchtxt builds with devkitPro/devkitA64 and uses imports from the game. The legacy subsdk5 builds include exlaunch, licensed under GPL-2.0. Upstream source: https://github.com/shadowninja108/exlaunch
 
-Native builds use devkitPro/devkitA64.
-No Nintendo game assets are distributed in this package. The destination list holds area names,
-spawn-point names and positions from the game's map files, used to ask the game for a warp.
+The destination list contains area and spawn names and coordinates used to request warps. The game files and SDK are local build inputs.

@@ -115,7 +115,11 @@ constexpr uintptr_t kMainDataOffset = 0x0484D000;
 
 // ---- Helpers --------------------------------------------------------------------------------------------------
 
+#if FAST_TRAVEL_PATCH
+inline uintptr_t mainBase() { return patch_main_base(); }
+#else
 inline uintptr_t mainBase() { return exl::util::GetMainModuleInfo().m_Total.m_Start; }
+#endif
 
 template <typename T>
 T& field(void* object, uintptr_t offset) {
@@ -211,11 +215,17 @@ private:
     SpinLock& m_lock;
 };
 
+#if FAST_TRAVEL_PATCH
+// Thread identity through the game's own nn::os::GetCurrentThread import (the patch build keeps to the game's code
+// and its imports).
+inline uintptr_t threadKey() { return reinterpret_cast<uintptr_t>(patch_current_thread()); }
+#else
 // Thread identity without importing system functions: the per-thread register every Horizon program reads.
 inline uintptr_t threadKey() {
     uintptr_t value;
     asm volatile("mrs %0, tpidrro_el0" : "=r"(value));
     return value;
 }
+#endif
 
 }  // namespace warp
