@@ -2,7 +2,7 @@ The mods in this repository are original work licensed under the MIT License (se
 
 Mirror Mode and Fast Travel are built as exlaunch modules. exlaunch
 (https://github.com/shadowninja108/exlaunch) is licensed under the GNU General Public License v2.0
-and is not included here; you obtain it separately when building. A compiled module (subsdk9 or
+and is not included here; you obtain it separately when building. A compiled module (subsdk4 or
 subsdk5) therefore contains exlaunch code, and that portion of any binary is distributed under
 GPL-2.0 terms. This repository provides the source for the mods' own code; exlaunch's source is
 available from its upstream repository.

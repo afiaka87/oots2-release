@@ -373,6 +373,11 @@ void paintFrame() {
 
 // The list page's status line while no warp status is shown: what A does on the cursor row.
 const char* listHint(const MenuView& view, bool spots, bool autosaveRow) {
+#if FAST_TRAVEL_VISITED_ONLY
+    if (!spots && shownAreas(view, view.list) == 0) {
+        return view.list == Age::Adult && !view.visits.adult ? "Opens when Link first grows up" : "No places visited yet";
+    }
+#endif
     // Link's age differs from the list's: a warp changes his age first (at the Temple of Time).
     if (view.link != KnownAge::Unknown && (view.link == KnownAge::Young) != (view.list == Age::Young)) {
         if (spots) { return "A: change age, then warp"; }
@@ -397,7 +402,7 @@ void paintList(const MenuView& view) {
     const bool spots = view.page == Page::Spots;
     const Area& area = kAreas[view.area];
     const int listFirst = ageFirst(view.list);
-    const int count = spots ? area.count : kTopRows + ageCount(view.list);
+    const int count = spots ? shownSpots(view, area) : kTopRows + shownAreas(view, view.list);
     const int cursor = spots ? view.spot : view.areaRow;
     const int top = spots ? view.spotTop : view.areaTop;
     Line subtitle;
@@ -411,14 +416,14 @@ void paintList(const MenuView& view) {
         line.put(0, selected ? ">" : " ");
         if (spots) {
             line.putRight(kSpotNumberEnd, Number(i + 1).text);
-            line.put(kSpotLabelColumn, kSpots[area.first + i].label, kSpotLabelLength);
+            line.put(kSpotLabelColumn, kSpots[shownSpot(view, area, i)].label, kSpotLabelLength);
         } else if (i < kTopRows) {
             line.put(kAreaTitleColumn, "Autosave", kAreaTitleLength);
             line.putRight(kAreaCountEnd, view.autosave ? "on" : "off");
         } else {
-            const Area& rowArea = kAreas[listFirst + i - kTopRows];
+            const Area& rowArea = kAreas[shownArea(view, listFirst, i - kTopRows)];
             line.put(kAreaTitleColumn, rowArea.title, kAreaTitleLength);
-            line.putRight(kAreaCountEnd, Number(rowArea.count).text);
+            line.putRight(kAreaCountEnd, Number(shownSpots(view, rowArea)).text);
         }
         drawText(2 + row, 0, line.text, selected ? kSelected : kText);
     }

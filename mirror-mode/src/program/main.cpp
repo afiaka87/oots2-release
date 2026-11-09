@@ -456,6 +456,16 @@ void logTarget(LayerInfo* layer, const void* texture) {
           a.textureHeight(texture), a.textureFormat(texture), a.textureSamples(texture));
 }
 
+// The HUD layer's first write to a freshly drawn world image, a bind or a copy, flips it first. Everything the HUD
+// layer puts on the image afterwards stays unmirrored, including a picture another mod copies onto the screen.
+bool flipIfDue(ThreadSlot* slot, void* cmd, const void* texture) {
+    if (!slot->flipPending || !s_apiReady.load() || s_flipFailed) { return false; }
+    if (!isFreshWorldImage(texture, s_hudPass.load(std::memory_order_relaxed))) { return false; }
+    if (!flipImage(cmd, texture)) { return false; }
+    slot->flipPending = false;
+    return true;
+}
+
 void onColorBind(void* cmd, const void* texture) {
     ThreadSlot* slot = findSlot(threadKey());
     LayerInfo* layer = slot != nullptr ? slot->layer : nullptr;
@@ -464,9 +474,7 @@ void onColorBind(void* cmd, const void* texture) {
         markWorldWrite(texture);
         return;
     }
-    if (layer->kind != LayerKind::Hud || !slot->flipPending || !s_apiReady.load() || s_flipFailed) { return; }
-    if (!isFreshWorldImage(texture, s_hudPass.load(std::memory_order_relaxed))) { return; }
-    if (flipImage(cmd, texture)) { slot->flipPending = false; }
+    if (layer->kind == LayerKind::Hud) { flipIfDue(slot, cmd, texture); }
 }
 
 void wrappedSetRenderTargets(u64 cmd, u64 count, u64 colors, u64 views, u64 depth, u64 depthView, u64 a6, u64 a7) {
@@ -477,12 +485,22 @@ void wrappedSetRenderTargets(u64 cmd, u64 count, u64 colors, u64 views, u64 dept
     s_realSetRenderTargets.load(std::memory_order_relaxed)(cmd, count, colors, views, depth, depthView, a6, a7);
 }
 
-// The game's own image copies also count as world image writes when a world layer (or an untracked thread) does them.
+u64 s_flipsAtCopy = 0;
+
+// Image copies done by a world layer (or an untracked thread) count as world image writes. A copy in the HUD layer
+// flips its target first if it is due: Fast Travel copies its menu onto the screen before the HUD layer's bind
+// reaches this module, so without this the menu would be mirrored.
 void wrappedCopy(u64 cmd, u64 src, u64 srcView, u64 srcRegion, u64 dst, u64 dstView, u64 dstRegion, u64 flags) {
     if (dst != 0) {
         ThreadSlot* slot = findSlot(threadKey());
-        if (slot == nullptr || slot->layer == nullptr || slot->layer->kind == LayerKind::World) {
+        LayerInfo* layer = slot != nullptr ? slot->layer : nullptr;
+        if (layer == nullptr || layer->kind == LayerKind::World) {
             markWorldWrite(reinterpret_cast<const void*>(dst));
+        } else if (layer->kind == LayerKind::Hud &&
+                   flipIfDue(slot, reinterpret_cast<void*>(cmd), reinterpret_cast<const void*>(dst)) &&
+                   isPowerOfTwo(++s_flipsAtCopy) && s_flipsAtCopy <= (1u << 20)) {
+            MMLOG("flip ran at a HUD-layer image copy onto image %#lx (another mod drawing on the screen): %llu times",
+                  static_cast<unsigned long>(dst), static_cast<unsigned long long>(s_flipsAtCopy));
         }
     }
     s_realCopy.load(std::memory_order_relaxed)(cmd, src, srcView, srcRegion, dst, dstView, dstRegion, flags);
@@ -808,14 +826,33 @@ bool layoutMatches() {
     return true;
 }
 
-bool siteMatches(const char* what, ptrdiff_t offset, const u32 (&expected)[4], const char* consequence) {
+// Another mod's load-time hook near main replaces only the first word with a branch into that mod (exlaunch's short
+// form). Modules start from the highest slot down, so Fast Travel (slot 5) is already in place when this module
+// (slot 4) starts. Mirror Mode installs on top: its hook runs first and then calls the other mod's hook, which calls the
+// game. Any other first word, or a branch back into main, is still a mismatch.
+bool isOtherModHook(ptrdiff_t offset, u32 word, uintptr_t& target) {
+    if ((word & 0xFC000000u) != 0x14000000u) { return false; }
+    const auto& main = exl::util::GetMainModuleInfo().m_Total;
+    const s64 delta = static_cast<s64>(static_cast<s32>(word << 6) >> 6) * 4;
+    target = main.m_Start + offset + delta;
+    return !main.InRange(target);
+}
+
+bool siteMatches(const char* what, ptrdiff_t offset, const u32 (&expected)[4], const char* consequence,
+                 bool shareable = false) {
     const auto* words = reinterpret_cast<const u32*>(exl::util::GetMainModuleInfo().m_Total.m_Start + offset);
-    for (int i = 0; i < 4; ++i) {
+    uintptr_t target = 0;
+    const bool hooked = shareable && words[0] != expected[0] && isOtherModHook(offset, words[0], target);
+    for (int i = hooked ? 1 : 0; i < 4; ++i) {
         if (words[i] != expected[i]) {
             MMLOG("%s at main+%#lx: word %d is %08x, expected %08x (another code mod?); %s", what,
                   static_cast<unsigned long>(offset), i, words[i], expected[i], consequence);
             return false;
         }
+    }
+    if (hooked) {
+        MMLOG("%s at main+%#lx is already hooked by another code mod (branch to %#lx); installing on top of it", what,
+              static_cast<unsigned long>(offset), static_cast<unsigned long>(target));
     }
     return true;
 }
@@ -824,16 +861,19 @@ bool siteMatches(const char* what, ptrdiff_t offset, const u32 (&expected)[4], c
 
 extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
     MMLOG("step 1/3: module started");
-    if (!layoutMatches() || !siteMatches("graphics table load", kLoadGraphicsProcs, kLoadGraphicsProcsWords, "nothing installed") ||
-        !siteMatches("layer draw", kDrawLayer, kDrawLayerWords, "nothing installed")) {
+    // The three hooks Fast Travel shares may already hold its branch; the motion call site must be vanilla.
+    if (!layoutMatches() ||
+        !siteMatches("graphics table load", kLoadGraphicsProcs, kLoadGraphicsProcsWords, "nothing installed", true) ||
+        !siteMatches("layer draw", kDrawLayer, kDrawLayerWords, "nothing installed", true)) {
         return;
     }
     // The stick and motion mirrors are installed only when their own sites match; the picture flip does not depend on
     // them.
-    const bool sticks = siteMatches("controller update", kControllerCalc, kControllerCalcWords, "sticks are not mirrored");
+    const bool sticks =
+        siteMatches("controller update", kControllerCalc, kControllerCalcWords, "sticks are not mirrored", true);
     const bool motion =
         siteMatches("motion sample call", kGetSixAxisStates, kGetSixAxisStatesWords, "motion is not mirrored");
-    MMLOG("step 2/3: hook sites checked (vanilla words): picture flip yes, stick mirror %s, motion mirror %s",
+    MMLOG("step 2/3: hook sites checked: picture flip yes, stick mirror %s, motion mirror %s",
           sticks ? "yes" : "no", motion ? "yes" : "no");
     exl::hook::Initialize();
     LoadGraphicsProcs::InstallAtOffset(kLoadGraphicsProcs);

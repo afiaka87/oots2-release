@@ -1,6 +1,7 @@
 #include "warp.hpp"
 
 #include "menu.hpp"
+#include "visits.hpp"
 
 #include <atomic>
 
@@ -425,6 +426,9 @@ void serviceWarps() {
     void* manager = instanceAt(kGameDataManagerSlot);
     void* eventManager = instanceAt(kEventManagerSlot);
     noteLinkAge(manager);
+#if FAST_TRAVEL_VISITED_ONLY
+    noteVisits(manager, s_linkAge, s_job.phase != Phase::Idle);
+#endif
     noteArrivingUpdate(false, manager, eventManager);
     runJob(manager, eventManager);
     serviceRequest(manager, eventManager);

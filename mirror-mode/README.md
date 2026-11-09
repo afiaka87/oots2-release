@@ -1,4 +1,4 @@
-# Mirror Mode v1.0.0
+# Mirror Mode v1.0.1
 
 Shows the 3D world of Ocarina of Time on Nintendo Switch 2 flipped left to right. The HUD, dialog
 and menus are not flipped.
@@ -17,16 +17,17 @@ Supports only the game's v131072 update (main executable build ID
 `E0F3CCFAF50065AE4EA01EB5AEB13B1A45DA3348`). Each hook site is checked at startup; on any other
 build the mod installs nothing and the game runs normally.
 
-Emulator only. Tested in Lichii nx2-build-93 on Windows; not tested on Switch 2 hardware.
+Emulator only. Tested in Lichii nx2-build-117 on Windows; not tested on Switch 2 hardware.
 
-1. Close the game.
+1. Close the game. If v1.0.0 is installed, delete its `Mirror Mode` folder.
 2. Extract the archive and copy its `Mirror Mode` folder into the game's mod folder (in Lichii,
    right-click the game and choose Open Mod Data Location).
-3. Confirm that the installed file is `Mirror Mode/exefs/subsdk9`. No `main.npdm` is included or
+3. Confirm that the installed file is `Mirror Mode/exefs/subsdk4`. No `main.npdm` is included or
    needed.
 4. Enable Mirror Mode in the game's Add-Ons and start the game from the game list.
 
-Mirror Mode cannot be combined with another executable mod that supplies `subsdk9`.
+Mirror Mode uses `subsdk4`, so it can run with a mod that supplies `subsdk9` (tested with
+Graphics-Menu). It cannot be combined with another mod that supplies `subsdk4`.
 
 ## Known issues
 
@@ -40,8 +41,8 @@ The public source is `src/program/main.cpp` under the MIT License. It is source 
 standalone build tree. Native builds require devkitA64 and exlaunch configured for module name
 `ootmirror`, fake heap enabled, the SVC debug-string logger, `HeapSize 0x10000`, `JitSize 0x1000`,
 `InlinePoolSize 0x1000`, `LogBufferSize 512`, an empty relocation table set, one default game
-version and subsdk slot 9. The released `subsdk9` has SHA-256
-`19a9f18a262c284bed568370e4b790ecb0efc6c26aaa171a5dfc5b12512a3516`.
+version and subsdk slot 4. The released `subsdk4` has SHA-256
+`c0020990fa20aa016ca3c8de2fabc2cb3565da08d60f35d775889be90c5b567f`.
 
 exlaunch, SDK headers and game assets are not included. The compiled module includes exlaunch
 (GPL-2.0); see `NOTICE.txt`.

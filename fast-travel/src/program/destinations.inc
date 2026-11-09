@@ -271,3 +271,295 @@ inline constexpr Spot kSpots[] = {
     {"Left hand door (upper floor)", "SpiritTemple_FromLeftHand", {55.750f, 132.122f, 39.254f}},
     {"Statue room (story spot)", "StartPos_SageOfSpirit", {0.461f, 136.167f, -75.916f}},
 };
+
+// Places: the game's visited-places flags, in first-use order (used by the visited-places build).
+inline constexpr const char* kPlaceFlags[] = {
+    "IsVisitLocation.KokiriForest",
+    "IsVisitLocation.InsideTheDekuTree",
+    "IsVisitLocation.LostWood",
+    "IsVisitLocation.SacredForestMeadow",
+    "IsVisitLocation.HyruleField",
+    "IsVisitLocation.LakeHylia",
+    "IsVisitLocation.LonLonRanch",
+    "IsVisitLocation.Market",
+    "IsVisitLocation.TimeTemple",
+    "IsVisitLocation.HyruleCastle",
+    "IsVisitLocation.KakarikoVillage",
+    "IsVisitLocation.Graveyard",
+    "IsVisitLocation.BottomOfTheWell",
+    "IsVisitLocation.DeathMountainTrail",
+    "IsVisitLocation.DodongoCavern",
+    "IsVisitLocation.GoronCity",
+    "IsVisitLocation.DeathMountainCrater",
+    "IsVisitLocation.ZoraRiver",
+    "IsVisitLocation.ZoraDomain",
+    "IsVisitLocation.ZoraFountain",
+    "IsVisitLocation.InsideJabuJabuBelly",
+    "IsVisitLocation.GerudoValley",
+    "IsVisitLocation.HountedWasteland",
+    "IsVisitLocation.DesertColossus",
+    "IsVisitLocation.SpiritTemple",
+    "IsVisitLocation.ForestTemple",
+    "IsVisitLocation.WaterTemple",
+    "IsVisitLocation.GanonCastle",
+    "IsVisitLocation.InsideGanonCastle",
+    "IsVisitLocation.ShadowTemple",
+    "IsVisitLocation.FireTemple",
+    "IsVisitLocation.IceCavern",
+    "IsVisitLocation.GerudoFortress",
+    "IsVisitLocation.GerudoTrainingGround",
+};
+
+// Each spot's place (index into kPlaceFlags), in kSpots order.
+inline constexpr u8 kSpotPlace[] = {
+    0, 0, 0, 0, 0, 0,  // Kokiri Forest (young)
+    1, 1,  // Inside the Deku Tree (young)
+    2, 2, 2, 2, 2, 2, 2, 2,  // Lost Woods (young)
+    3, 3, 3,  // Sacred Forest Meadow (young)
+    4, 4, 4, 4, 4, 5, 5, 4, 5, 5, 6, 4, 5,  // Hyrule Field, Lake Hylia (young)
+    7, 7, 8, 7, 7, 7, 7, 7,  // Market, Temple of Time (young)
+    9,  // Hyrule Castle (young)
+    10, 10, 10, 10, 10, 10,  // Kakariko Village (young)
+    11, 11, 11, 11,  // Graveyard (young)
+    12, 12,  // Bottom of the Well (young)
+    13, 13, 13, 13, 13,  // Death Mountain Trail (young)
+    14, 14,  // Dodongo's Cavern (young)
+    15, 15, 15, 15,  // Goron City (young)
+    16, 16, 16, 16,  // Death Mountain Crater (young)
+    17, 17, 17, 17,  // Zora's River (young)
+    18, 18, 18, 18,  // Zora's Domain (young)
+    19, 19, 19,  // Zora's Fountain (young)
+    20, 20, 20,  // Jabu-Jabu's Belly (young)
+    21, 21, 21,  // Gerudo Valley (young)
+    22, 22,  // Haunted Wasteland (young)
+    23, 23, 23, 23, 23, 23,  // Desert Colossus (young)
+    24, 24, 24, 24,  // Spirit Temple (young)
+    0, 0, 0, 0,  // Kokiri Forest (adult)
+    1, 1,  // Inside the Deku Tree (adult)
+    2, 2, 2, 2, 2, 2, 2, 2,  // Lost Woods (adult)
+    3, 3, 3,  // Sacred Forest Meadow (adult)
+    25, 25, 25,  // Forest Temple (adult)
+    4, 4, 4, 4, 4, 5, 5, 5, 4, 5, 5, 6, 6, 5,  // Hyrule Field, Lake Hylia (adult)
+    26, 26, 26, 26,  // Water Temple (adult)
+    7, 7, 8,  // Market, Temple of Time (adult)
+    27, 27, 27,  // Ganon's Castle (outside) (adult)
+    28, 28, 28,  // Inside Ganon's Castle (adult)
+    10, 10, 10, 10, 10, 10, 10, 10,  // Kakariko Village (adult)
+    11, 11, 11, 11,  // Graveyard (adult)
+    29, 29, 29, 29, 29,  // Shadow Temple (adult)
+    12, 12,  // Bottom of the Well (adult)
+    13, 13, 13, 13, 13,  // Death Mountain Trail (adult)
+    14, 14,  // Dodongo's Cavern (adult)
+    15, 15, 15, 15,  // Goron City (adult)
+    16, 16, 16, 16,  // Death Mountain Crater (adult)
+    30, 30,  // Fire Temple (adult)
+    17, 17, 17, 17,  // Zora's River (adult)
+    18, 18, 18,  // Zora's Domain (adult)
+    19, 19, 19,  // Zora's Fountain (adult)
+    31, 31,  // Ice Cavern (adult)
+    21, 21, 21, 21,  // Gerudo Valley (adult)
+    32, 32, 32,  // Gerudo's Fortress (adult)
+    33, 33,  // Gerudo Training Ground (adult)
+    22, 22, 22,  // Haunted Wasteland (adult)
+    23, 23, 23, 23, 23, 23,  // Desert Colossus (adult)
+    24, 24, 24, 24,  // Spirit Temple (adult)
+};
+
+// Each spot's name in the visited-places record, in kSpots order: murmur3 of "<area>/<spawn point>", or of
+// "<area>/@x,y,z" (rounded position) for a position spot.
+inline constexpr u32 kSpotKey[] = {
+    0xC627617B, 0x2850216E, 0xA52BBC88, 0xA60E2992, 0xA085AAD7, 0x2684A2AC,  // Kokiri Forest (young)
+    0xEC7E9C19, 0x9DB945D7,  // Inside the Deku Tree (young)
+    0x454BB4E7, 0x9FAF49EC, 0xFA9FED60, 0x1557B0EC, 0x44D71405, 0xBF1E5E40, 0xD35679BA, 0xB98FABD3,  // Lost Woods (young)
+    0x418DB387, 0x74DBD14A, 0x6E261F9B,  // Sacred Forest Meadow (young)
+    0x31F2912F, 0xE5BD4C79, 0xCEF830F1, 0x89F04CF2, 0x34D7634C, 0xF58612F9, 0x53D4BEE9, 0x59AB3C2C, 0x612499F2, 0xB2B007C2, 0xD6660D0D, 0xF2A58AD2, 0x82038DBD,  // Hyrule Field, Lake Hylia (young)
+    0xD562B579, 0xC79E292B, 0xD7EDDB86, 0x8239FE45, 0x6BA3433B, 0xEEC15B3D, 0xC2AFD71F, 0x85523093,  // Market, Temple of Time (young)
+    0x6AC8E7F6,  // Hyrule Castle (young)
+    0x3307081F, 0x481A3FC4, 0x7D9C23A3, 0x6C22EC13, 0xC0AC9C21, 0x1C56D3F9,  // Kakariko Village (young)
+    0x7B0CD5AA, 0xEB5418DF, 0xD55A8962, 0xA58C0225,  // Graveyard (young)
+    0xFFC4119F, 0xEB53E454,  // Bottom of the Well (young)
+    0x11720211, 0xF8453239, 0xB0CD4191, 0xDF7E7FFE, 0xD96B364E,  // Death Mountain Trail (young)
+    0xC729D937, 0x41795C40,  // Dodongo's Cavern (young)
+    0x2116614E, 0x9E10ACBF, 0xC2B12EFC, 0x0D952E28,  // Goron City (young)
+    0xBDA32DCB, 0x4E072299, 0xCD854748, 0x05252262,  // Death Mountain Crater (young)
+    0x479601FF, 0xFBA0BFEF, 0x6FAF2B58, 0x0354B66C,  // Zora's River (young)
+    0xB57F4978, 0xF2E5F5D8, 0x7C85B90F, 0xA59D9DD6,  // Zora's Domain (young)
+    0xFF3E9CE6, 0xCBFFB5C3, 0x182DF4C0,  // Zora's Fountain (young)
+    0xE2A5DC83, 0x93396210, 0xB0394F4E,  // Jabu-Jabu's Belly (young)
+    0x18EC7EFC, 0x9340DC76, 0x73A8A817,  // Gerudo Valley (young)
+    0x06CBC700, 0x25D191A9,  // Haunted Wasteland (young)
+    0x7B189A1F, 0x6BB7C060, 0xFD6C24F7, 0x5EBF45E5, 0x7F79B39B, 0xCF18E9E2,  // Desert Colossus (young)
+    0xCFF3CE08, 0x7D07BFC3, 0x1A813BAB, 0x593848FF,  // Spirit Temple (young)
+    0xBC5FC5DA, 0x3389F998, 0xC55DB9D6, 0x505D75D7,  // Kokiri Forest (adult)
+    0xEC7E9C19, 0x9DB945D7,  // Inside the Deku Tree (adult)
+    0xDD6AB1D5, 0x61D7B4F7, 0xF565B078, 0x17C63132, 0xFB7A9197, 0x432B6CCB, 0x065F198D, 0x12FE4377,  // Lost Woods (adult)
+    0x7E17B824, 0xEFF9E913, 0x9C75A608,  // Sacred Forest Meadow (adult)
+    0x715F3E8B, 0x9AC17617, 0x3CBB6A9C,  // Forest Temple (adult)
+    0xFE7A4B10, 0xF9714140, 0xD8BE2195, 0x22D3A1BA, 0x92BE92AE, 0x36560EC0, 0xE543E342, 0xD4E947C7, 0x2F2BCF27, 0xEFF26A5F, 0x3C570056, 0x77DCEE5E, 0xFD00BD8D, 0x37267030,  // Hyrule Field, Lake Hylia (adult)
+    0x2C8AF39F, 0x75A75E1D, 0x4F97CC40, 0xB823AF79,  // Water Temple (adult)
+    0x89C8217D, 0x3286303D, 0xCAE76D3F,  // Market, Temple of Time (adult)
+    0x67176F57, 0x8422C180, 0xD7E89834,  // Ganon's Castle (outside) (adult)
+    0x3E60BF2F, 0xA13F8779, 0x201426B6,  // Inside Ganon's Castle (adult)
+    0x87173CE5, 0x33C948D0, 0x51CE978C, 0x24A5F12C, 0xD8833FAB, 0x92D44B00, 0x67C7EE0E, 0x4E124FFE,  // Kakariko Village (adult)
+    0x81304360, 0x5EDB3C69, 0x49EF4526, 0x6A89C252,  // Graveyard (adult)
+    0x4D5273DA, 0x4F3933D7, 0xB5703D06, 0x26BCD188, 0xA461AC01,  // Shadow Temple (adult)
+    0xFFC4119F, 0xEB53E454,  // Bottom of the Well (adult)
+    0xC702A04A, 0x80638666, 0xC3DAE3A2, 0x9F9A0FFE, 0x3106FE5D,  // Death Mountain Trail (adult)
+    0xC729D937, 0x41795C40,  // Dodongo's Cavern (adult)
+    0x497D1963, 0x260510D4, 0x6347D4E4, 0xA1C2EFF1,  // Goron City (adult)
+    0x62F3D95B, 0x5347D59B, 0xEA8F82F0, 0xFD087269,  // Death Mountain Crater (adult)
+    0x9802DB36, 0xF78E59D2,  // Fire Temple (adult)
+    0x25471422, 0x8440E4D1, 0xE3B3B6B5, 0xF4D047B8,  // Zora's River (adult)
+    0xAC2C5616, 0x9C7F233B, 0x45A8AC4C,  // Zora's Domain (adult)
+    0xA76EE407, 0xE626C2D0, 0x9193FAD7,  // Zora's Fountain (adult)
+    0x592EE790, 0x6E36CDF5,  // Ice Cavern (adult)
+    0xD7E47271, 0x7C8284D4, 0xAC7CC4DC, 0x71678474,  // Gerudo Valley (adult)
+    0xFFB4D630, 0x70C1444F, 0x18AC75B9,  // Gerudo's Fortress (adult)
+    0x361FFC5C, 0x0ED4C1F5,  // Gerudo Training Ground (adult)
+    0xA6BD3CF0, 0x3CAAF2FB, 0x504454F3,  // Haunted Wasteland (adult)
+    0xDB3E529B, 0x27C49213, 0xE5267DE3, 0x035473A7, 0x44BF2891, 0x2A462607,  // Desert Colossus (adult)
+    0xCFF3CE08, 0x7D07BFC3, 0x1A813BAB, 0x593848FF,  // Spirit Temple (adult)
+};
+
+// Loading zones: arriving at the key (murmur3 of "<destination area>/<spawn point>") from the spot's area
+// also shows the spot, the zone's own side (used by the visited-places build).
+inline constexpr Doorway kDoorways[] = {
+    {0xEC7E9C19, 0},
+    {0x454BB4E7, 1},
+    {0x34D7634C, 2},
+    {0xC627617B, 6},
+    {0x2850216E, 8},
+    {0x74DBD14A, 9},
+    {0x479601FF, 10},
+    {0xC2B12EFC, 11},
+    {0xFAFC4568, 11},
+    {0x715F3E8B, 16},
+    {0x9FAF49EC, 17},
+    {0xD562B579, 19},
+    {0x2F208958, 20},
+    {0x6FAF2B58, 20},
+    {0x3307081F, 21},
+    {0x18EC7EFC, 22},
+    {0xA52BBC88, 23},
+    {0x9340DC76, 24},
+    {0x7C85B90F, 25},
+    {0x31F2912F, 32},
+    {0x6AC8E7F6, 33},
+    {0xC79E292B, 40},
+    {0xCEF830F1, 41},
+    {0xDF7E7FFE, 42},
+    {0x7B0CD5AA, 43},
+    {0xFFC4119F, 44},
+    {0x7D9C23A3, 47},
+    {0x4D5273DA, 48},
+    {0x6C22EC13, 51},
+    {0xBDA32DCB, 53},
+    {0xC729D937, 54},
+    {0x9E10ACBF, 55},
+    {0x481A3FC4, 56},
+    {0xF8453239, 58},
+    {0x4E072299, 60},
+    {0xB0CD4191, 61},
+    {0x1557B0EC, 62},
+    {0xCBD21D24, 62},
+    {0x11720211, 64},
+    {0x2116614E, 65},
+    {0x9802DB36, 66},
+    {0xFA9FED60, 68},
+    {0xB57F4978, 69},
+    {0x6F2A861D, 70},
+    {0xE5BD4C79, 70},
+    {0xFBA0BFEF, 72},
+    {0xFF3E9CE6, 73},
+    {0x53D4BEE9, 74},
+    {0xF2E5F5D8, 76},
+    {0xE2A5DC83, 77},
+    {0xCBFFB5C3, 79},
+    {0x89F04CF2, 82},
+    {0xF58612F9, 83},
+    {0x5EBF45E5, 85},
+    {0xCFF3CE08, 87},
+    {0x7D07BFC3, 88},
+    {0x1A813BAB, 89},
+    {0x06CBC700, 90},
+    {0x7B189A1F, 93},
+    {0x6BB7C060, 94},
+    {0xFD6C24F7, 95},
+    {0xDD6AB1D5, 97},
+    {0x92BE92AE, 98},
+    {0xB5731C2C, 101},
+    {0xBC5FC5DA, 103},
+    {0xEFF9E913, 104},
+    {0x25471422, 105},
+    {0x6347D4E4, 106},
+    {0xB897E3DE, 106},
+    {0x715F3E8B, 111},
+    {0x61D7B4F7, 112},
+    {0x7E17B824, 114},
+    {0x89C8217D, 117},
+    {0x20F18F7C, 118},
+    {0xE3B3B6B5, 118},
+    {0x87173CE5, 119},
+    {0x7C8284D4, 120},
+    {0x3389F998, 121},
+    {0xAC7CC4DC, 122},
+    {0x2C8AF39F, 123},
+    {0x45A8AC4C, 124},
+    {0xE543E342, 131},
+    {0xFE7A4B10, 135},
+    {0x8422C180, 136},
+    {0x3E60BF2F, 138},
+    {0x3286303D, 139},
+    {0x67176F57, 141},
+    {0xD8BE2195, 144},
+    {0x9F9A0FFE, 145},
+    {0xFFC4119F, 147},
+    {0x49EF4526, 148},
+    {0x81304360, 148},
+    {0x51CE978C, 152},
+    {0x4D5273DA, 153},
+    {0xD8833FAB, 154},
+    {0x5EDB3C69, 156},
+    {0x24A5F12C, 161},
+    {0x62F3D95B, 163},
+    {0xC729D937, 164},
+    {0x260510D4, 165},
+    {0x33C948D0, 166},
+    {0x80638666, 168},
+    {0x5347D59B, 170},
+    {0xC3DAE3A2, 171},
+    {0x17C63132, 172},
+    {0xA3D2B10F, 172},
+    {0xC702A04A, 174},
+    {0x497D1963, 175},
+    {0x9802DB36, 176},
+    {0xEA8F82F0, 178},
+    {0xF565B078, 180},
+    {0xAC2C5616, 181},
+    {0xDBD56575, 182},
+    {0xF9714140, 182},
+    {0x8440E4D1, 184},
+    {0x9193FAD7, 185},
+    {0xD4E947C7, 186},
+    {0x592EE790, 187},
+    {0x6E36CDF5, 187},
+    {0x9C7F233B, 189},
+    {0xE626C2D0, 190},
+    {0xA76EE407, 191},
+    {0xFFB4D630, 192},
+    {0x22D3A1BA, 193},
+    {0x36560EC0, 194},
+    {0xD7E47271, 196},
+    {0xA6BD3CF0, 197},
+    {0x361FFC5C, 198},
+    {0x18AC75B9, 199},
+    {0x70C1444F, 201},
+    {0x035473A7, 202},
+    {0xCFF3CE08, 204},
+    {0x7D07BFC3, 205},
+    {0x1A813BAB, 206},
+    {0x3CAAF2FB, 207},
+    {0xDB3E529B, 210},
+    {0x27C49213, 211},
+    {0xE5267DE3, 212},
+};

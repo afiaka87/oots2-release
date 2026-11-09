@@ -5,7 +5,8 @@
 // - an area's spots: A warps, B goes back.
 // D-pad up and down move the cursor, left and right move a page at a time. A spot in the other age's list changes
 // Link's age first. A, B, X, Y and the D-pad are hidden from the game while the menu is open (and until each is
-// released after it closes); L3 is always hidden from the game.
+// released after it closes); L3 is always hidden from the game. The visited-places build (FAST_TRAVEL_VISITED_ONLY)
+// lists only the places the save records as visited and, in them, the spots Link has arrived at or gone through.
 #pragma once
 
 #include "destinations.hpp"
@@ -51,6 +52,34 @@ constexpr int kTopRows = 1;
 // Index of an age in per-age arrays: young 0, adult 1.
 constexpr int ageIndex(Age age) { return age == Age::Young ? 0 : 1; }
 
+#if FAST_TRAVEL_VISITED_ONLY
+inline constexpr int kSpotWords = (kSpotCount + 63) / 64;
+
+// A set of spots (bit i: kSpots[i]).
+struct SpotSet {
+    u64 words[kSpotWords] = {};
+};
+constexpr bool hasSpot(const SpotSet& set, int spot) { return ((set.words[spot / 64] >> (spot % 64)) & 1) != 0; }
+constexpr bool sameSpots(const SpotSet& a, const SpotSet& b) {
+    for (int i = 0; i < kSpotWords; ++i) {
+        if (a.words[i] != b.words[i]) { return false; }
+    }
+    return true;
+}
+
+// The places the save records as visited (bit i: kPlaceFlags[i]), the spots Link has arrived at or gone through
+// (kept in a file beside the save slot), and whether the adult list is open: the story has made Link adult once, or
+// he is adult now. A spot is listed when both its place and the spot itself are recorded.
+struct Visits {
+    u64 places = 0;
+    SpotSet spots;
+    bool adult = false;
+};
+constexpr bool sameVisits(const Visits& a, const Visits& b) {
+    return a.places == b.places && a.adult == b.adult && sameSpots(a.spots, b.spots);
+}
+#endif
+
 // A copy of the menu state for drawing.
 struct MenuView {
     bool open = false;
@@ -65,10 +94,29 @@ struct MenuView {
     int spotTop = 0;   // first spot row shown
     bool autosave = true;  // the game's automatic saves, for this session
     Status status = Status::Ready;
+#if FAST_TRAVEL_VISITED_ONLY
+    Visits visits;
+#endif
     u32 version = 0;  // changes whenever anything shown changes
 };
 
 MenuView menuView();
+
+// What a list shows: its areas in order (listFirst is ageFirst of the list's age), and each area's spots. The
+// visited-places build leaves out the spots not yet reached, the places with none, and the whole adult list until it
+// is open; the other build shows every area and spot, and compiles to the same code as before the visited-places
+// build.
+#if FAST_TRAVEL_VISITED_ONLY
+int shownAreas(const MenuView& view, Age age);
+int shownArea(const MenuView& view, int listFirst, int n);  // index into kAreas; listFirst if there is no n-th
+int shownSpots(const MenuView& view, const Area& area);
+int shownSpot(const MenuView& view, const Area& area, int n);  // index into kSpots
+#else
+constexpr int shownAreas(const MenuView&, Age age) { return ageCount(age); }
+constexpr int shownArea(const MenuView&, int listFirst, int n) { return listFirst + n; }
+constexpr int shownSpots(const MenuView&, const Area& area) { return area.count; }
+constexpr int shownSpot(const MenuView&, const Area& area, int n) { return area.first + n; }
+#endif
 
 // A warp chosen in the menu, consumed by the controller update. None pending while area is -1.
 struct WarpRequest {
@@ -81,6 +129,10 @@ WarpRequest takeWarpRequest();
 void reportWarp(Status status, bool closeMenu);
 // Called by the controller update with Link's age each time it reads it.
 void reportLinkAge(KnownAge age);
+#if FAST_TRAVEL_VISITED_ONLY
+// Called by the controller update with the save's visited places each time it reads them.
+void reportVisits(const Visits& visits);
+#endif
 // The menu's autosave switch (on unless the player turned it off this session).
 bool autosaveOn();
 

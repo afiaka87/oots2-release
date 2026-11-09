@@ -58,6 +58,38 @@ constexpr Site kEventRequest{"event request", 0xD7A820, {0xB940B808, 0x37580808,
 constexpr Site kEventRequestMemberEnd{"event request clean-up", 0x20B6F0,
                                       {0xD503237F, 0xA9BC7BFD, 0xF9000BF7, 0xA90257F6}};
 
+#if FAST_TRAVEL_VISITED_ONLY
+// ---- Save files (visited-places build) ------------------------------------------------------------------------
+
+// Import entries of the nn::fs file functions. Every game file open (the save slots' progress.sav among them) goes
+// through OpenFile, which the visited-places build hooks; the others are called to keep its doorway record beside
+// each slot's progress.sav.
+constexpr Site kOpenFile{"file open", 0x3C42590, {0xB00083F0, 0xF9424A11, 0x91124210, 0xD61F0220}};
+constexpr Site kGetFileSize{"file size read", 0x3C425A0, {0xB00083F0, 0xF9424E11, 0x91126210, 0xD61F0220}};
+constexpr Site kCloseFile{"file close", 0x3C425B0, {0xB00083F0, 0xF9425211, 0x91128210, 0xD61F0220}};
+constexpr Site kCreateFile{"file create", 0x3C425D0, {0xB00083F0, 0xF9425A11, 0x9112C210, 0xD61F0220}};
+constexpr Site kWriteFile{"file write", 0x3C425E0, {0xB00083F0, 0xF9425E11, 0x9112E210, 0xD61F0220}};
+constexpr Site kSetFileSize{"file size set", 0x3C42940, {0xB00083F0, 0xF9433611, 0x9119A210, 0xD61F0220}};
+constexpr Site kReadFile{"file read", 0x3C43050, {0x900083F0, 0xF944FA11, 0x9127C210, 0xD61F0220}};
+
+// nn::fs types as the import names give them.
+struct FileHandle {
+    void* handle;
+};
+struct WriteOption {
+    int flags;
+};
+constexpr int kOpenRead = 1;
+constexpr int kOpenWrite = 2;
+constexpr int kWriteFlush = 1;
+constexpr u32 kPathAlreadyExists = 0x402;  // nn::fs result for CreateFile on an existing file
+
+// Link's position (three floats), as the SeqGetPlayerPos node reads it: two loads from kPlayerInfoSlot, then +0x590.
+// An earlier test build logged plausible distances from it.
+constexpr ptrdiff_t kPlayerInfoSlot = 0x4C7E2A8;
+constexpr uintptr_t kPlayerInfoPosition = 0x590;
+#endif
+
 // ---- Data -----------------------------------------------------------------------------------------------------
 
 constexpr ptrdiff_t kGameDataManagerSlot = 0x4C7E180;  // two loads give the GameData manager

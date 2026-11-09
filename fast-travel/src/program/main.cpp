@@ -10,6 +10,7 @@
 #include "game.hpp"
 #include "menu.hpp"
 #include "overlay.hpp"
+#include "visits.hpp"
 #include "warp.hpp"
 
 namespace warp {
@@ -127,6 +128,15 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
         padCount += pads[i] ? 1 : 0;
     }
     const bool warps = update && called;
+#if FAST_TRAVEL_VISITED_ONLY
+    // The spot record beside each save slot needs the file open hook and every file function it calls. Without them
+    // the spots reached still show for the session, but are not kept with the save.
+    bool record = warps;
+    for (const Site* site : {&kOpenFile, &kGetFileSize, &kCloseFile, &kCreateFile, &kWriteFile, &kSetFileSize,
+                             &kReadFile}) {
+        record = siteMatches(*site, "the spots reached are not kept with the save") && record;
+    }
+#endif
     if (padCount == 0) {
         WTLOG("no controller read site matched; nothing installed");
         return;
@@ -137,13 +147,22 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
     if (drawing) { installOverlayHooks(); }
     if (warps) { ControllerCalc::InstallAtOffset(kControllerCalc.offset); }
     if (warps && saves) { AutoSaveRequest::InstallAtOffset(kAutoSaveRequest.offset); }
+#if FAST_TRAVEL_VISITED_ONLY
+    if (record) { installSaveRecordHook(); }
+    WTLOG("spot record beside each save slot: %s", record ? "on" : "off (spots reached show for this session only)");
+#endif
     if (pads[0]) { NpadStates0::InstallAtOffset(kNpadStates[0].offset); }
     if (pads[1]) { NpadStates1::InstallAtOffset(kNpadStates[1].offset); }
     if (pads[2]) { NpadStates2::InstallAtOffset(kNpadStates[2].offset); }
     if (pads[3]) { NpadStates3::InstallAtOffset(kNpadStates[3].offset); }
     if (pads[4]) { NpadStates4::InstallAtOffset(kNpadStates[4].offset); }
+#if FAST_TRAVEL_VISITED_ONLY
+#define FAST_TRAVEL_LIST_NOTE "; the lists show visited places and the spots reached in them"
+#else
+#define FAST_TRAVEL_LIST_NOTE ""
+#endif
     WTLOG("step 3/3: hooks installed (menu drawing %s, warps %s, autosave hold %s, controller types %d of 5); L3 opens "
-          "the menu",
+          "the menu" FAST_TRAVEL_LIST_NOTE,
           drawing ? "on" : "off", warps ? "on" : "off", warps && saves ? "on" : "off", padCount);
 }
 

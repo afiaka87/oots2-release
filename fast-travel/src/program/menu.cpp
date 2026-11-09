@@ -42,7 +42,7 @@ int padSlot(const u32* npadId) {
 
 void changed() { ++s_menu.version; }
 
-int listRows(Age age) { return kTopRows + ageCount(age); }
+int listRows(Age age) { return kTopRows + shownAreas(s_menu, age); }
 
 // A cursor move or page change clears an old message, but a warp's status stays until the warp has finished.
 void clearStatus() {
@@ -55,7 +55,7 @@ void syncAreaCursor() {
     s_menu.areaRow = s_areaRow[i];
     s_menu.areaTop = s_areaTop[i];
     const int row = s_areaRow[i] - kTopRows;
-    s_menu.area = ageFirst(s_menu.list) + (row > 0 ? row : 0);
+    s_menu.area = shownArea(s_menu, ageFirst(s_menu.list), row > 0 ? row : 0);
 }
 
 // Shows an age's list (its list page, with that list's own cursor).
@@ -67,6 +67,68 @@ void showList(Age age) {
     clearStatus();
     changed();
 }
+
+#if FAST_TRAVEL_VISITED_ONLY
+// The first row shown, so that the cursor row is visible and the list does not scroll past its end.
+int scrolledTop(int cursor, int top, int count);
+
+bool listOpen(const MenuView& view, Age age) { return age == Age::Young || view.visits.adult; }
+bool spotShown(const MenuView& view, int spot) {
+    return ((view.visits.places >> kSpotPlace[spot]) & 1) != 0 && hasSpot(view.visits.spots, spot);
+}
+
+// The list row of an area (-1 when the list does not show it).
+int rowOfArea(Age age, int area) {
+    const int count = shownAreas(s_menu, age);
+    for (int n = 0; n < count; ++n) {
+        if (shownArea(s_menu, ageFirst(age), n) == area) { return kTopRows + n; }
+    }
+    return -1;
+}
+
+// After the shown places change: each list's cursor stays on its area while that is still shown (otherwise on the
+// nearest row; an empty list's cursor goes to its first area once it has one), and so does the spot cursor; the
+// spots page goes back to the list when its area is no longer shown.
+void fitCursors(const MenuView before) {
+    for (const Age age : {Age::Young, Age::Adult}) {
+        const int i = ageIndex(age);
+        const int rowsBefore = kTopRows + shownAreas(before, age);
+        const int rows = listRows(age);
+        int row = s_areaRow[i];
+        if (rowsBefore == kTopRows) {
+            row = rows > kTopRows ? kTopRows : 0;
+        } else if (row >= kTopRows && row < rowsBefore) {
+            const int moved = rowOfArea(age, shownArea(before, ageFirst(age), row - kTopRows));
+            if (moved >= 0) { row = moved; }
+        }
+        if (row >= rows) { row = rows - 1; }
+        s_areaRow[i] = row;
+        s_areaTop[i] = scrolledTop(row, s_areaTop[i], rows);
+    }
+    syncAreaCursor();
+    if (s_spotsArea >= 0) {
+        const Area& area = kAreas[s_spotsArea];
+        const int count = shownSpots(s_menu, area);
+        int spot = s_menu.spot;
+        if (spot < shownSpots(before, area)) {
+            const int was = shownSpot(before, area, spot);
+            for (int n = 0; n < count; ++n) {
+                if (shownSpot(s_menu, area, n) == was) { spot = n; }
+            }
+        }
+        if (spot >= count) { spot = count - 1; }
+        if (spot < 0) {
+            s_spotsArea = -1;
+            s_menu.spot = 0;
+            s_menu.spotTop = 0;
+        } else {
+            s_menu.spot = spot;
+            s_menu.spotTop = scrolledTop(spot, s_menu.spotTop, count);
+        }
+    }
+    if (s_menu.page == Page::Spots && s_spotsArea != s_menu.area) { s_menu.page = Page::Areas; }
+}
+#endif
 
 void closeMenu(u64 held) {
     if (!s_menu.open) { return; }
@@ -83,6 +145,9 @@ void toggleMenu(u64 held) {
         return;
     }
     if (s_menu.link != KnownAge::Unknown) { showList(s_menu.link == KnownAge::Young ? Age::Young : Age::Adult); }
+#if FAST_TRAVEL_VISITED_ONLY
+    fitCursors(s_menu);
+#endif
     s_menu.open = true;
     changed();
     WTLOG("menu opened (L3): %s list, %s page, row %d, spot %d, status '%s'", ageName(s_menu.list),
@@ -105,7 +170,10 @@ void moveCursor(int delta, bool wrap) {
     const int list = ageIndex(s_menu.list);
     int& cursor = spots ? s_menu.spot : s_areaRow[list];
     int& top = spots ? s_menu.spotTop : s_areaTop[list];
-    const int count = spots ? kAreas[s_menu.area].count : listRows(s_menu.list);
+    const int count = spots ? shownSpots(s_menu, kAreas[s_menu.area]) : listRows(s_menu.list);
+#if FAST_TRAVEL_VISITED_ONLY
+    if (count <= 0) { return; }
+#endif
     int next = cursor + delta;
     if (wrap) {
         next = ((next % count) + count) % count;
@@ -136,7 +204,7 @@ bool busy() { return s_pending.area >= 0 || inProgress(s_menu.status); }
 void chooseSpot() {
     if (busy()) { return; }
     const Area& area = kAreas[s_menu.area];
-    s_pending = {s_menu.area, area.first + s_menu.spot};
+    s_pending = {s_menu.area, shownSpot(s_menu, area, s_menu.spot)};
     s_menu.status = Status::Warping;
     changed();
     WTLOG("warp chosen: %s (%s list), spot %d '%s'", area.title, ageName(area.age), s_menu.spot + 1,
@@ -186,6 +254,46 @@ void handlePresses(u64 pressed, u64 held) {
 }
 
 }  // namespace
+
+#if FAST_TRAVEL_VISITED_ONLY
+int shownSpots(const MenuView& view, const Area& area) {
+    if (!listOpen(view, area.age)) { return 0; }
+    int n = 0;
+    for (int spot = area.first; spot < area.first + area.count; ++spot) { n += spotShown(view, spot) ? 1 : 0; }
+    return n;
+}
+
+int shownSpot(const MenuView& view, const Area& area, int n) {
+    for (int spot = area.first; spot < area.first + area.count; ++spot) {
+        if (spotShown(view, spot) && n-- == 0) { return spot; }
+    }
+    return area.first;
+}
+
+int shownAreas(const MenuView& view, Age age) {
+    const int first = ageFirst(age);
+    int n = 0;
+    for (int area = first; area < first + ageCount(age); ++area) { n += shownSpots(view, kAreas[area]) > 0 ? 1 : 0; }
+    return n;
+}
+
+int shownArea(const MenuView& view, int listFirst, int n) {
+    const int end = listFirst + ageCount(kAreas[listFirst].age);
+    for (int area = listFirst; area < end; ++area) {
+        if (shownSpots(view, kAreas[area]) > 0 && n-- == 0) { return area; }
+    }
+    return listFirst;
+}
+
+void reportVisits(const Visits& visits) {
+    LockGuard guard(s_lock);
+    if (sameVisits(s_menu.visits, visits)) { return; }
+    const MenuView before = s_menu;
+    s_menu.visits = visits;
+    fitCursors(before);
+    changed();
+}
+#endif
 
 const char* statusText(Status status) {
     switch (status) {
