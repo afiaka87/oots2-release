@@ -1,9 +1,8 @@
-# Fast Travel: picture menu (draft)
+# Fast Travel v1.3.0
 
-This branch is a draft for discussion and is not a release. It builds samaBR85's picture menu (pull request #1) as a
-patch file. The menu shows the list alone by default; with the player's own pictures on the SD card it shows a
-picture beside each area and a large picture of the area under the cursor. The released versions are on the `main`
-branch.
+Version 1.3.0 builds samaBR85's picture menu (pull request #1) as a patch file. The menu shows the list alone by
+default; with the player's own pictures on the SD card it shows a picture beside each area and a large picture of the
+area under the cursor.
 
 Fast Travel adds a menu to Ocarina of Time on Nintendo Switch 2. Pick an area and an arrival spot to warp there as
 young or adult Link.
@@ -24,7 +23,7 @@ Both images are PC renders of the menu's own drawing code (`src/program/ui/`) at
   Inter and Cinzel text, the area pictures and their descriptions in `assets/`, and `tools/make_assets.py`.
 - samaBR85: built-in BC1 pictures for the patch build (commit `2a90d2a`). The patch build does not use them; see
   "What changed from pull request #1".
-- afiaka87: the original Fast Travel mod, and on this branch the patch-file build of the picture menu, the list-only
+- afiaka87: the original Fast Travel mod, and in v1.3.0 the patch-file build of the picture menu, the list-only
   layout, the larger menu, the JPEG reader for SD-card pictures, and the L3 + R3 chord.
 
 ## What changed from pull request #1
@@ -170,17 +169,17 @@ uv run --no-project --with capstone --with pyelftools --with lz4 --with numpy --
 ```
 
 The command writes `fast-travel-patch/exefs/fast-travel-patch.pchtxt` and a separate IPS32 fallback. Use the pchtxt
-for installation. `--all-places` builds the all-places version (not tested on this branch).
+for installation. `--all-places` builds the all-places version (not tested in v1.3.0).
 
 `tools/preview.cpp` draws the menu on a PC in both layouts, and `tools/host/jpeg_check.cpp` runs the JPEG reader on a
 PC; the build commands are at the top of each file.
 
-The visited patch built from this branch has SHA-256
+The tested v1.3.0 visited patch has SHA-256
 `d3b9046246e3b45818cf5e70d86705e2f0cb5925841c5fef1834ff9d9477ae25`.
 
 ## Known issues
 
-- The subsdk module build is not updated for this branch.
+- The subsdk module build is not updated for v1.3.0; the subsdk5 downloads are the older v1.0.0 and v1.1.0.
 - Moving the cursor to an area decodes its large picture, and the first menu open decodes the thumbnails shown. In
   Fritchii on the test PC that took about 60 to 70 ms per large picture and 35 to 45 ms per thumbnail for 960 x 540
   files; larger files take longer.
