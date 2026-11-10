@@ -1,6 +1,7 @@
-// The area pictures, read from the SD card's fast-travel/pictures.bin (made by tools/make_assets.py pictures): a raw
-// RGB preview and thumbnail per area for each screen scale. The file is opened the first time the menu is
-// painted; without it the menu draws empty frames where the pictures go.
+// The area pictures. Built in: BC1-compressed pictures compiled into the module (kPictureFile, made by
+// tools/make_assets.py embedded), scaled to the preview and thumbnail sizes when shown. Optional override: the SD card's
+// fast-travel/pictures.bin (made by tools/make_assets.py pictures), raw RGB previews and thumbnails per screen scale,
+// opened the first time the menu is painted; when it is present it replaces the built-in pictures.
 #pragma once
 
 #include <cstdint>

@@ -1,7 +1,8 @@
 # Fast Travel: picture menu (draft)
 
 This branch is a draft for discussion and is not a release. It builds samaBR85's picture menu (pull request #1) as a
-patch file and reads the area pictures from the SD card. The released versions are on the `main` branch.
+patch file, with the area pictures built in (BC1-compressed); a picture file on the SD card can replace them. The
+released versions are on the `main` branch.
 
 Fast Travel adds a menu to Ocarina of Time on Nintendo Switch 2. Pick an area and an arrival spot to warp there as
 young or adult Link.
@@ -15,13 +16,18 @@ young or adult Link.
   `tools/make_assets.py`.
 - afiaka87: the original Fast Travel mod, and on this branch the patch-file build of the picture menu, loading the
   pictures from the SD card, and the L3 + R3 chord.
+- samaBR85: the built-in BC1 pictures (`tools/make_assets.py embedded`, `src/program/ui/pictures.cpp`).
 
 ## What changed from pull request #1
 
 - The menu builds as a patch file (`.pchtxt`) instead of a subsdk module. The glyphs are generated at build time and
   compiled in.
-- The pictures are too large for a patch file (about 23 MB), so they are a separate file on the SD card. The JPEG
-  decoder is removed. The pictures are stored uncompressed and read from the SD card when the menu needs them.
+- The JPEG decoder is removed (it did not fit in the game's free space). The pictures are built in as BC1 (DXT1)
+  textures at 256x144, about 18 KiB per area and 850 KiB for all 47, and scaled to the preview and thumbnail sizes
+  when shown; the decoder is a few lines (each 4x4 block is two RGB565 colours and sixteen 2-bit indices). They use
+  the preview and thumbnail buffers the SD-card version already had, so the module needs no more memory.
+- An uncompressed picture file on the SD card (about 23 MB) still works and, when present, replaces the built-in
+  pictures, for example with a player's own screenshots.
 - The menu is drawn into one of two images in turn. Drawing into the image on screen showed a coloured flicker on
   every change.
 - The menu opens with L3 + R3 (both sticks pressed in) instead of L3 alone.
@@ -31,10 +37,10 @@ young or adult Link.
 Emulator only. The visited patch was tested on Windows in the Fritchii v5.5 emulator, started from the game list. It
 targets game version 2.0.0 (update v131072), main build ID `E0F3CCFAF50065AE4EA01EB5AEB13B1A45DA3348`.
 
-1. Build the patch and the picture file as described under Source and local build.
+1. Build the patch as described under Source and local build.
 2. Close the game. In the emulator, right-click it and choose **Open Mod Data Location**. Copy the
    `fast-travel-patch` output folder there as `Fast Travel (Visited Patch)`.
-3. Copy the picture file by hand to `fast-travel/pictures.bin` on the SD card. The mod does not install it. In an
+3. Optional: to replace the built-in pictures, copy a picture file to `fast-travel/pictures.bin` on the SD card. In an
    emulator the SD card is the `sdmc` folder in the emulator's data folder; Lichii and Fritchii on Windows use
    `%APPDATA%\eden\sdmc\fast-travel\pictures.bin`. On a Switch 2 it is `fast-travel/pictures.bin` at the root of the
    microSD card (not tested on hardware).
@@ -42,7 +48,7 @@ targets game version 2.0.0 (update v131072), main build ID `E0F3CCFAF50065AE4EA0
    for this setup. The patch and those mods can use the same game hooks.
 5. Start the game from the game list. Press L3 and R3 together after loading a save.
 
-Without the picture file the menu still works and shows empty picture frames.
+Without the picture file the menu shows the built-in pictures.
 
 ## Using the menu
 
@@ -89,9 +95,10 @@ uv run --no-project --with capstone --with pyelftools --with lz4 --with numpy --
 uv run --no-project --with pillow python tools/make_assets.py pictures assets/areas <local-output-directory>/pictures.bin
 ```
 
-The first command writes `fast-travel-patch/exefs/fast-travel-patch.pchtxt` and a separate IPS32 fallback. Use the
-pchtxt for installation. `--all-places` builds the all-places version (not tested on this branch). The second command
-writes the picture file.
+The first command writes `fast-travel-patch/exefs/fast-travel-patch.pchtxt` and a separate IPS32 fallback, with the
+built-in pictures from `assets/areas/` (`tools/make_assets.py embedded`). Use the pchtxt for installation.
+`--all-places` builds the all-places version (not tested on this branch). The second command writes the optional
+picture file for the SD card.
 
 Tested files (SHA-256):
 
@@ -102,6 +109,9 @@ Tested files (SHA-256):
 
 - The subsdk module build and `tools/preview.cpp` are not updated for this branch. They still expect the picture and
   glyph file and the JPEG decoder from pull request #1.
-- Moving to a new area reads that area's large picture from the SD card.
+- With the SD-card picture file, moving to a new area reads that area's large picture from the SD card. The built-in
+  pictures are decoded from memory instead (the thumbnails once, the preview on each area change).
+- The built-in pictures were checked on a PC (the same `src/program/ui/` code drawing the panel) and compiled with the
+  patch's compiler flags, but not yet built into a pchtxt and run in the game.
 
 The source is MIT licensed. See `NOTICE.txt` for credits and the legacy module dependency.

@@ -303,6 +303,8 @@ def compile_module(out: Path, tool_bin: Path, visited: bool, hooks: list[tuple[s
     import make_assets  # noqa: E402  (needs Pillow)
     fonts = make_assets.build_fonts()
     (gen / "fonts.inc").write_text(make_assets.as_c_array(fonts, "kFontFile"), encoding="utf-8")
+    pictures = make_assets.build_embedded_pictures(MOD / "assets" / "areas")
+    (gen / "pictures.inc").write_text(make_assets.as_c_array(pictures, "kPictureFile"), encoding="utf-8")
     (gen / "patch_hooks.inc").write_text(
         "".join(f"    {{{site:#x}, {bit}}},  // {name}\n" for name, site, bit in hooks), encoding="utf-8")
     (gen / "patch_adapters.inc").write_text(
