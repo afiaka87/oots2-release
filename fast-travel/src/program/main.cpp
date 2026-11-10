@@ -79,6 +79,9 @@ WARP_NPAD_HOOK(4)
 #undef WARP_NPAD_HOOK
 
 bool layoutMatches() {
+#if FAST_TRAVEL_PATCH
+    return true;  // the patch file applies only to build E0F3CCFA
+#else
     const auto& main = exl::util::GetMainModuleInfo();
     const uintptr_t base = main.m_Total.m_Start;
     if (main.m_Rodata.m_Start - base != kMainRodataOffset || main.m_Data.m_Start - base != kMainDataOffset) {
@@ -87,11 +90,19 @@ bool layoutMatches() {
         return false;
     }
     return true;
+#endif
 }
 
-bool siteMatches(const Site& site, const char* consequence) {
+// The patch build's own branch replaces each hooked routine's first word, so it checks the rest.
+#if FAST_TRAVEL_PATCH
+constexpr int kHookedFirstWord = 1;
+#else
+constexpr int kHookedFirstWord = 0;
+#endif
+
+bool siteMatches(const Site& site, const char* consequence, bool hooked = false) {
     const auto* words = reinterpret_cast<const u32*>(mainBase() + site.offset);
-    for (int i = 0; i < 4; ++i) {
+    for (int i = hooked ? kHookedFirstWord : 0; i < 4; ++i) {
         if (words[i] != site.words[i]) {
             WTLOG("%s at main+%#lx: word %d is %08x, expected %08x (another code mod?); %s", site.what,
                   static_cast<unsigned long>(site.offset), i, words[i], site.words[i], consequence);
@@ -111,20 +122,21 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
     // The menu needs the pad hooks (its buttons), the drawing hooks (its box) and the controller update (where warps
     // run). Warps also need every called routine. Each pad form is installed on its own match.
     const bool drawing =
-        siteMatches(kLoadGraphicsProcs, "the menu is not drawn") && siteMatches(kDrawLayer, "the menu is not drawn");
-    const bool update = siteMatches(kControllerCalc, "warps cannot run");
+        siteMatches(kLoadGraphicsProcs, "the menu is not drawn", true) &&
+        siteMatches(kDrawLayer, "the menu is not drawn", true);
+    const bool update = siteMatches(kControllerCalc, "warps cannot run", true);
     bool called = true;
     for (const Site* site : {&kSetString64, &kGetString64, &kSetVec3, &kGetBool, &kEventRequestInit, &kEventRequest,
                              &kEventRequestMemberEnd}) {
         called = siteMatches(*site, "warps cannot run") && called;
     }
     // Holding saves is installed only with warps (the hold follows the warp state), and on its own match.
-    const bool saves = siteMatches(kAutoSaveRequest, "automatic saves are not held") &&
+    const bool saves = siteMatches(kAutoSaveRequest, "automatic saves are not held", true) &&
                        siteMatches(kAutoSaveRequestBody, "automatic saves are not held");
     bool pads[5];
     int padCount = 0;
     for (int i = 0; i < 5; ++i) {
-        pads[i] = siteMatches(kNpadStates[i], "that controller type cannot open the menu");
+        pads[i] = siteMatches(kNpadStates[i], "that controller type cannot open the menu", true);
         padCount += pads[i] ? 1 : 0;
     }
     const bool warps = update && called;
@@ -134,7 +146,7 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
     bool record = warps;
     for (const Site* site : {&kOpenFile, &kGetFileSize, &kCloseFile, &kCreateFile, &kWriteFile, &kSetFileSize,
                              &kReadFile}) {
-        record = siteMatches(*site, "the spots reached are not kept with the save") && record;
+        record = siteMatches(*site, "the spots reached are not kept with the save", site == &kOpenFile) && record;
     }
 #endif
     if (padCount == 0) {
@@ -166,4 +178,6 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
           drawing ? "on" : "off", warps ? "on" : "off", warps && saves ? "on" : "off", padCount);
 }
 
+#if !FAST_TRAVEL_PATCH
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }
+#endif
