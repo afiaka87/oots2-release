@@ -1,4 +1,4 @@
-Fast Travel's original source is MIT licensed, copyright Clay Mullis.
+Fast Travel's original source is MIT licensed, copyright HanSoloBlaster, afiaka87.
 
 The picture menu (src/program/ui/, tools/make_assets.py, assets/) is by samaBR85, contributed in pull request #1.
 The JPEG reader (src/program/ui/jpeg.cpp) was written for this mod and uses no third-party code.
@@ -10,6 +10,6 @@ compiled patch holds glyphs drawn from them.
 The area pictures in assets/areas/ were made with an image generator from text descriptions
 (assets/prompts.json); they are not taken from the game.
 
-The v1.2.0 pchtxt builds with devkitPro/devkitA64 and uses imports from the game. The legacy subsdk5 builds include exlaunch, licensed under GPL-2.0. Upstream source: https://github.com/shadowninja108/exlaunch
+The pchtxt patches build with devkitPro/devkitA64 and uses imports from the game. The legacy subsdk5 builds include exlaunch, licensed under GPL-2.0. Upstream source: https://github.com/shadowninja108/exlaunch
 
 The destination list contains area and spawn names and coordinates used to request warps. The game files and SDK are local build inputs.

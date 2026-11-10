@@ -106,8 +106,7 @@ MenuView menuView();
 
 // What a list shows: its areas in order (listFirst is ageFirst of the list's age), and each area's spots. The
 // visited-places build leaves out the spots not yet reached, the places with none, and the whole adult list until it
-// is open; the other build shows every area and spot, and compiles to the same code as before the visited-places
-// build.
+// is open; the all-places build shows every area and spot of both ages.
 #if FAST_TRAVEL_VISITED_ONLY
 int shownAreas(const MenuView& view, Age age);
 int shownArea(const MenuView& view, int listFirst, int n);  // index into kAreas; listFirst if there is no n-th

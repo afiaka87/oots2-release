@@ -1,6 +1,7 @@
 // Fast Travel for the Ocarina of Time remake (Switch 2): an L3 + R3 menu at the bottom left
-// of the screen lists every area young or adult Link can visit (X switches the list) and, in each, the spots where the
-// game itself places him; A warps there. A warp fills the game's reserved next-area slots and requests the game's
+// of the screen lists the areas young or adult Link can visit (X switches the list) and, in each, the spots where the
+// game itself places him; A warps there. The all-places build lists every area and spot from the start; the visited
+// build only those Link has reached (menu.hpp). A warp fills the game's reserved next-area slots and requests the game's
 // half-second silent event; when that event ends, the game's own sequence loads the area with its usual fade. A spot
 // in the other age's world goes to the Temple of Time first and runs the game's own age change there. The game's
 // automatic saves are held mid-way through an age change, and a menu switch turns them off for the session.
@@ -93,6 +94,13 @@ bool layoutMatches() {
 #endif
 }
 
+// What the start-up line adds about the lists.
+#if FAST_TRAVEL_VISITED_ONLY
+#define FAST_TRAVEL_LIST_NOTE "; the lists show visited places and the spots reached in them"
+#else
+#define FAST_TRAVEL_LIST_NOTE ""
+#endif
+
 // The patch build's own branch replaces each hooked routine's first word, so it checks the rest.
 #if FAST_TRAVEL_PATCH
 constexpr int kHookedFirstWord = 1;
@@ -174,11 +182,6 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
     if (pads[2]) { NpadStates2::InstallAtOffset(kNpadStates[2].offset); }
     if (pads[3]) { NpadStates3::InstallAtOffset(kNpadStates[3].offset); }
     if (pads[4]) { NpadStates4::InstallAtOffset(kNpadStates[4].offset); }
-#if FAST_TRAVEL_VISITED_ONLY
-#define FAST_TRAVEL_LIST_NOTE "; the lists show visited places and the spots reached in them"
-#else
-#define FAST_TRAVEL_LIST_NOTE ""
-#endif
     WTLOG("step 3/3: hooks installed (menu drawing %s, warps %s, autosave hold %s, controller types %d of 5); "
           "L3 + R3 opens the menu" FAST_TRAVEL_LIST_NOTE,
           drawing ? "on" : "off", warps ? "on" : "off", warps && saves ? "on" : "off", padCount);

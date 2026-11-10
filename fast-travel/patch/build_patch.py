@@ -43,11 +43,24 @@ SDK_BUILD_ID = "1643A838814F9C10C696F930ED681E7FA3FB9AF8"
 MAGIC = 0x31505446  # "FTP1"
 MAX_GAP_WORDS = 6
 
-# Hook name in the source, Site constant in game.hpp.
+# Hook name in the source, Site constant in game.hpp. A hook's list position is its gate bit.
 HOOKS = [("ControllerCalc", "kControllerCalc"), ("AutoSaveRequest", "kAutoSaveRequest"),
          ("LoadGraphicsProcs", "kLoadGraphicsProcs"), ("DrawLayer", "kDrawLayer")]
 HOOKS += [(f"NpadStates{i}", f"kNpadStates[{i}]") for i in range(5)]
-VISITED_HOOKS = [("OpenFileHook", "kOpenFile")]
+
+
+@dataclass(frozen=True)
+class Variant:
+    """One shipped version: its output names, its FAST_TRAVEL_VISITED_ONLY value and its hooks."""
+    slug: str  # output folder and pchtxt name
+    title: str  # add-on folder name, also the pchtxt's title line
+    visited: bool
+    hooks: tuple[tuple[str, str], ...]
+
+
+VISITED = Variant("fast-travel-patch", "Fast Travel (Visited Patch)", True,
+                  (*HOOKS, ("OpenFileHook", "kOpenFile")))  # the spot record beside each save slot
+ALL_PLACES = Variant("fast-travel-patch-all", "Fast Travel (All Places Patch)", False, tuple(HOOKS))
 
 IMPORTS = {
     "svcGetSystemTick": "_ZN2nn2os13GetSystemTickEv",
@@ -295,7 +308,7 @@ def tool(tool_bin: Path, name: str) -> str:
     return str(tool_bin / f"aarch64-none-elf-{name}{suffix}")
 
 
-def compile_module(out: Path, tool_bin: Path, visited: bool, hooks: list[tuple[str, int, int]],
+def compile_module(out: Path, tool_bin: Path, variant: Variant, hooks: list[tuple[str, int, int]],
                    replay: dict[str, tuple[int, bool]], deltas: tuple[int, int]) -> Path:
     gen = out / "generated"
     gen.mkdir(parents=True, exist_ok=True)
@@ -318,7 +331,7 @@ def compile_module(out: Path, tool_bin: Path, visited: bool, hooks: list[tuple[s
     for source in sources:
         obj = out / f"{source.stem}.o"
         compiler, language = ("gcc", C_FLAGS) if source.suffix == ".c" else ("g++", FLAGS)
-        text = run([tool(tool_bin, compiler), *language, f"-DFAST_TRAVEL_VISITED_ONLY={int(visited)}",
+        text = run([tool(tool_bin, compiler), *language, f"-DFAST_TRAVEL_VISITED_ONLY={int(variant.visited)}",
                     *(f"-I{p}" for p in includes), "-c", str(source), "-o", str(obj)], log)
         warnings += [line for line in text.splitlines() if "warning:" in line]
         objects.append(obj)
@@ -645,9 +658,8 @@ def check_main_image(kit: patchkit.PatchKit) -> None:
         raise ValueError("nnMain entry changed")
 
 
-def prepare_hooks(main_bin: bytes, visited: bool):
+def prepare_hooks(main_bin: bytes, hook_list: tuple[tuple[str, str], ...]):
     sites = load_sites()
-    hook_list = HOOKS + (VISITED_HOOKS if visited else [])
     hooks = [(name, sites[const][0], bit) for bit, (name, const) in enumerate(hook_list)]
     stubs, slots = load_imports(main_bin)
     externals = {alias: stubs[name] for alias, name in IMPORTS.items()}
@@ -681,17 +693,15 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, help="output root (default: <game-dir>/build)")
     args = parser.parse_args()
 
-    visited = not args.all_places
-    slug = "fast-travel-patch" if visited else "fast-travel-patch-all"
-    title = "Fast Travel (Visited Patch)" if visited else "Fast Travel (All Places Patch)"
-    kit = patchkit.PatchKit(slug, title, nso=args.game_dir / "main.uncompressed.nso",
+    variant = ALL_PLACES if args.all_places else VISITED
+    kit = patchkit.PatchKit(variant.slug, variant.title, nso=args.game_dir / "main.uncompressed.nso",
                             image_path=args.game_dir / "main.bin")
     check_main_image(kit)
-    hooks, externals, replay = prepare_hooks(kit.image, visited)
+    hooks, externals, replay = prepare_hooks(kit.image, variant.hooks)
     deltas = sdk_deltas(args.game_dir)
 
-    out = (args.output_dir or args.game_dir / "build") / f"{slug}-work"
-    combined = compile_module(out, args.tool_bin, visited, hooks, replay, deltas)
+    out = (args.output_dir or args.game_dir / "build") / f"{variant.slug}-work"
+    combined = compile_module(out, args.tool_bin, variant, hooks, replay, deltas)
     if args.compile_only:
         print(run([tool(args.tool_bin, "size"), "-A", str(combined)], out / "commands.log"))
         print(run([tool(args.tool_bin, "nm"), "-u", str(combined)], out / "commands.log"))

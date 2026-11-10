@@ -1,6 +1,9 @@
-# Fast Travel v1.3.0
+# Fast Travel v1.4.0
 
-Version 1.3.0 builds samaBR85's picture menu (pull request #1) as a patch file. The menu shows the list alone by
+Version 1.4.0 adds the all-places patch: every area and spot for young and adult Link is in the menu from the start,
+as in the v1.0.0 module, with the v1.3.0 menu. The visited patch is unchanged from v1.3.0 (same file).
+
+Version 1.3.0 built samaBR85's picture menu (pull request #1) as a patch file. The menu shows the list alone by
 default; with the player's own pictures on the SD card it shows a picture beside each area and a large picture of the
 area under the cursor.
 
@@ -24,7 +27,8 @@ Both images are PC renders of the menu's own drawing code (`src/program/ui/`) at
 - samaBR85: built-in BC1 pictures for the patch build (commit `2a90d2a`). The patch build does not use them; see
   "What changed from pull request #1".
 - afiaka87: the original Fast Travel mod, and in v1.3.0 the patch-file build of the picture menu, the list-only
-  layout, the larger menu, the JPEG reader for SD-card pictures, and the L3 + R3 chord.
+  layout, the larger menu, the JPEG reader for SD-card pictures, and the L3 + R3 chord; in v1.4.0 the all-places
+  patch.
 
 ## What changed from pull request #1
 
@@ -44,17 +48,28 @@ Both images are PC renders of the menu's own drawing code (`src/program/ui/`) at
   every change.
 - The menu opens with L3 + R3 (both sticks pressed in) instead of L3 alone.
 
+## Versions
+
+| Add-on folder | Patch file | Destinations |
+| --- | --- | --- |
+| `Fast Travel (All Places Patch)` | `exefs/fast-travel-patch-all.pchtxt` | All 51 areas and 214 spots, young and adult, from the start |
+| `Fast Travel (Visited Patch)` | `exefs/fast-travel-patch.pchtxt` | The spots Link has reached in the current save (see "Visited destinations") |
+
+Both patches write the same free space and hooks in the game, so enable only one of them.
+
 ## Requirements and install
 
-Emulator only. Tested on Windows in the Fritchii v5.5 emulator, started from the game list. It targets game version
-2.0.0 (update v131072), main build ID `E0F3CCFAF50065AE4EA01EB5AEB13B1A45DA3348`.
+Emulator only. Tested on Windows from the game list, the all-places patch in Fritchii v5.7 and the visited patch in
+Fritchii v5.5. Both patches target game version 2.0.0 (update v131072), main build ID
+`E0F3CCFAF50065AE4EA01EB5AEB13B1A45DA3348`.
 
 1. Build the patch as described under "Source and local build".
 2. Close the game. In the emulator, right-click it and choose **Open Mod Data Location**. Copy the
-   `fast-travel-patch` output folder there as `Fast Travel (Visited Patch)`.
+   `fast-travel-patch-all` output folder there as `Fast Travel (All Places Patch)`, or the `fast-travel-patch` output
+   folder as `Fast Travel (Visited Patch)`.
 3. Optional: add pictures as described under "Adding pictures".
-4. Enable **Fast Travel (Visited Patch)** and disable the older Fast Travel add-ons, Mirror Mode, and Graphics-Menu
-   for this setup. The patch and those mods can use the same game hooks.
+4. Enable that one folder and disable every other Fast Travel add-on, Mirror Mode, and Graphics-Menu for this setup.
+   The patches and those mods can use the same game hooks.
 5. Start the game from the game list. Press L3 and R3 together after loading a save.
 
 ## Adding pictures
@@ -140,9 +155,10 @@ The names are the game's own names for each area (`HountedWasteland` is spelled 
 
 ## Visited destinations
 
-Each save has its own `fasttravel.sav` alongside `progress.sav`. The list fills as Link reaches arrival points or goes
-through loading zones. For spots without a named arrival point, such as the Lost Woods clearings, the mod checks
-whether Link comes within 5 m. A Fast Travel warp adds no destinations.
+This applies to the visited patch only; the all-places patch keeps no record. Each save has its own
+`fasttravel.sav` alongside `progress.sav`. The list fills as Link reaches arrival points or goes through loading
+zones. For spots without a named arrival point, such as the Lost Woods clearings, the mod checks whether Link comes
+within 5 m. A Fast Travel warp adds no destinations.
 
 ## The pictures and fonts in this folder
 
@@ -168,18 +184,23 @@ your paths.
 uv run --no-project --with capstone --with pyelftools --with lz4 --with numpy --with pillow python patch/build_patch.py --game-dir <local-input-directory> --tool-bin <devkitA64-bin> --output-dir <local-output-directory>
 ```
 
-The command writes `fast-travel-patch/exefs/fast-travel-patch.pchtxt` and a separate IPS32 fallback. Use the pchtxt
-for installation. `--all-places` builds the all-places version (not tested in v1.3.0).
+The command writes the visited patch, `fast-travel-patch/exefs/fast-travel-patch.pchtxt`, and a separate IPS32
+fallback. Add `--all-places` for the all-places patch, `fast-travel-patch-all/exefs/fast-travel-patch-all.pchtxt`.
+Use the pchtxt for installation. The two versions are listed once in `patch/build_patch.py` (`VISITED`,
+`ALL_PLACES`).
 
 `tools/preview.cpp` draws the menu on a PC in both layouts, and `tools/host/jpeg_check.cpp` runs the JPEG reader on a
 PC; the build commands are at the top of each file.
 
-The tested v1.3.0 visited patch has SHA-256
-`d3b9046246e3b45818cf5e70d86705e2f0cb5925841c5fef1834ff9d9477ae25`.
+The tested v1.4.0 patches have these SHA-256 values:
+
+- all places: `fce813454a066cb0a288a766d2625032a86be326e57c90ea3588976073692b88`
+- visited (the same file as v1.3.0): `d3b9046246e3b45818cf5e70d86705e2f0cb5925841c5fef1834ff9d9477ae25`
 
 ## Known issues
 
-- The subsdk module build is not updated for v1.3.0; the subsdk5 downloads are the older v1.0.0 and v1.1.0.
+- The subsdk module build is not updated for v1.3.0 or v1.4.0; the subsdk5 downloads are the older v1.0.0 and
+  v1.1.0.
 - Moving the cursor to an area decodes its large picture, and the first menu open decodes the thumbnails shown. In
   Fritchii on the test PC that took about 60 to 70 ms per large picture and 35 to 45 ms per thumbnail for 960 x 540
   files; larger files take longer.
