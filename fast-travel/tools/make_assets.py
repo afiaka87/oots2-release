@@ -1,13 +1,8 @@
-"""Builds the Fast Travel menu's two asset files.
+"""Builds the Fast Travel menu's glyph file.
 
-  fonts <out.inc>              anti-aliased glyph sets, as a C array the patch build compiles into the module
-  embedded <folder> <out.inc>  one picture per area, BC1-compressed, as a C array the patch build compiles into the
-                               module (the menu's built-in pictures)
-  pictures <folder> <out.bin>  one picture per area (raw RGB previews and thumbnails for screen scales 3 and 2),
-                               optionally installed on the SD card as fast-travel/pictures.bin; it replaces the
-                               built-in pictures
+  fonts <out.inc>   anti-aliased glyph sets, as a C array the patch build compiles into the module
 
-The picture for each area is <GameBancParam name>.jpg or .png in the folder; a missing picture is an error.
+The area pictures are not built here: players put their own JPEG files on the SD card (see the README).
 
 Font file (little-endian; every offset is from the start of the file, and 0 means "none"):
   header:  'FTF1', u32 fontCount, u32 glyphFirst (32), u32 glyphCount (95)
@@ -15,23 +10,8 @@ Font file (little-endian; every offset is from the start of the file, and 0 mean
   glyphs:  per font glyphCount x { i16 xoff; i16 yoff; u16 w; u16 h; u16 advance64; u16 0; u32 bitmapOff }
   data:    8-bit glyph coverage, w x h bytes per glyph
 
-Picture file:
-  header:  'FTI1', u32 imageCount, u32 0, u32 0
-  images:  imageCount x { char name[40]; u32 preview3Off, preview2Off, thumb3Off, thumb2Off, 0, 0 }
-  data:    RGB888 previews (450x252 and 300x168) and thumbnails (48x27 and 32x18), rows top-down
-
-The previews are raw so the patch needs no picture decoder (one decoder did not fit in the game's free space).
-
-Built-in pictures (C array kPictureFile):
-  header:  'FTB1', u32 imageCount, u16 width, u16 height, u32 0
-  images:  imageCount x { char name[40]; u32 dataOff; u32 0, 0, 0, 0, 0 }
-  data:    BC1 (DXT1) blocks, (width / 4) x (height / 4) blocks of 8 bytes, rows of blocks top-down; the module
-           scales them to the preview and thumbnail sizes when it shows them. BC1 keeps the decoder to a few
-           instructions: each 4x4 block is two RGB565 colours and sixteen 2-bit indices.
-
 The sizes and ids here must match src/program/ui/assets.cpp.
 """
-import re
 import struct
 import sys
 from pathlib import Path
@@ -39,30 +19,17 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
-INC = HERE.parent / "src" / "program" / "destinations.inc"
 
-PREVIEW = {3: (450, 252), 2: (300, 168)}
-THUMB = {3: (48, 27), 2: (32, 18)}
 GLYPH_FIRST, GLYPH_COUNT = 32, 95
 
 FONTS = [
-    # class, file, weight, px at scale 3, px at scale 2
-    (0, "Cinzel.ttf", 700, 30, 20),  # menu title
-    (1, "Cinzel.ttf", 600, 25, 17),  # area name under the picture
-    (2, "Inter.ttf", 500, 20, 14),   # list rows
-    (3, "Inter.ttf", 400, 16, 12),   # small text: counts, status, hints
-    (4, "Inter.ttf", 700, 15, 11),   # letters inside the button marks
+    # class, file, weight, px at scale 3, px at scale 2 (1.25 x the first sizes, 30/20 ... 15/11)
+    (0, "Cinzel.ttf", 700, 38, 25),  # menu title
+    (1, "Cinzel.ttf", 600, 31, 21),  # area name under the picture
+    (2, "Inter.ttf", 500, 25, 18),   # list rows
+    (3, "Inter.ttf", 400, 20, 15),   # small text: counts, status, hints
+    (4, "Inter.ttf", 700, 19, 14),   # letters inside the button marks
 ]
-
-
-def area_names() -> list[str]:
-    text = INC.read_text(encoding="utf-8")
-    start = text.index("kAreas[]")
-    names = []
-    for name in re.findall(r'\{"([^"]+)"', text[start:text.index("};", start)]):
-        if name not in names:
-            names.append(name)
-    return names
 
 
 class Blob:
@@ -119,66 +86,8 @@ def build_fonts() -> bytes:
     return bytes(blob.data)
 
 
-def crop_16x9(im: Image.Image) -> Image.Image:
-    w, h = im.size
-    if w * 9 <= h * 16:
-        top = (h - w * 9 / 16) / 2
-        return im.crop((0, round(top), w, round(h - top)))
-    left = (w - h * 16 / 9) / 2
-    return im.crop((round(left), 0, round(w - left), h))
-
-
-def build_pictures(folder: Path) -> bytes:
-    names = area_names()
-    blob = Blob(16 + 64 * len(names))
-    struct.pack_into("<4sIII", blob.data, 0, b"FTI1", len(names), 0, 0)
-    for index, name in enumerate(names):
-        path = next((p for p in (folder / f"{name}.jpg", folder / f"{name}.png") if p.exists()), None)
-        if path is None:
-            raise SystemExit(f"no picture for {name} in {folder}")
-        if len(name) >= 40:
-            raise SystemExit(f"area name too long for the picture table: {name}")
-        im = crop_16x9(Image.open(path).convert("RGB"))
-        fields = [blob.put(im.resize(size[scale], Image.LANCZOS).tobytes()) for size in (PREVIEW, THUMB) for scale in (3, 2)]
-        struct.pack_into("<40s6I", blob.data, 16 + 64 * index, name.encode(), *fields, 0, 0)
-    return bytes(blob.data)
-
-
-EMBEDDED_SIZE = (256, 144)  # 16:9, multiple of 4; about 18 KiB per area in BC1
-
-
-def bc1_blocks(im: Image.Image) -> bytes:
-    """BC1 blocks of an RGB image (Pillow's DDS writer), without the 128-byte DDS header."""
-    import io
-    buffer = io.BytesIO()
-    im.save(buffer, "DDS", pixel_format="DXT1")
-    data = buffer.getvalue()
-    if data[:4] != b"DDS " or data[84:88] != b"DXT1":
-        raise SystemExit("Pillow did not write a DXT1 DDS file")
-    w, h = im.size
-    return data[128:128 + (w // 4) * (h // 4) * 8]
-
-
-def build_embedded_pictures(folder: Path, size: tuple[int, int] = EMBEDDED_SIZE) -> bytes:
-    names = area_names()
-    w, h = size
-    if w % 4 or h % 4:
-        raise SystemExit("the built-in picture size must be a multiple of 4")
-    blob = Blob(16 + 64 * len(names))
-    struct.pack_into("<4sIHHI", blob.data, 0, b"FTB1", len(names), w, h, 0)
-    for index, name in enumerate(names):
-        path = next((p for p in (folder / f"{name}.jpg", folder / f"{name}.png") if p.exists()), None)
-        if path is None:
-            raise SystemExit(f"no picture for {name} in {folder}")
-        if len(name) >= 40:
-            raise SystemExit(f"area name too long for the picture table: {name}")
-        im = crop_16x9(Image.open(path).convert("RGB")).resize(size, Image.LANCZOS)
-        struct.pack_into("<40s6I", blob.data, 16 + 64 * index, name.encode(), blob.put(bc1_blocks(im)), 0, 0, 0, 0, 0)
-    return bytes(blob.data)
-
-
 def as_c_array(blob: bytes, name: str) -> str:
-    lines = [f"// Generated by tools/make_assets.py; {len(blob)} bytes.",
+    lines = [f"// Generated by tools/make_assets.py fonts; {len(blob)} bytes.",
              f"alignas(4) inline constexpr unsigned char {name}[] = {{"]
     for at in range(0, len(blob), 32):
         lines.append("    " + ",".join(str(b) for b in blob[at:at + 32]) + ",")
@@ -190,12 +99,6 @@ def main() -> None:
     if len(sys.argv) == 3 and sys.argv[1] == "fonts":
         blob = build_fonts()
         Path(sys.argv[2]).write_text(as_c_array(blob, "kFontFile"), encoding="utf-8")
-    elif len(sys.argv) == 4 and sys.argv[1] == "embedded":
-        blob = build_embedded_pictures(Path(sys.argv[2]))
-        Path(sys.argv[3]).write_text(as_c_array(blob, "kPictureFile"), encoding="utf-8")
-    elif len(sys.argv) == 4 and sys.argv[1] == "pictures":
-        blob = build_pictures(Path(sys.argv[2]))
-        Path(sys.argv[3]).write_bytes(blob)
     else:
         raise SystemExit(__doc__)
     print(f"{sys.argv[1]}: {len(blob)} bytes -> {sys.argv[-1]}")

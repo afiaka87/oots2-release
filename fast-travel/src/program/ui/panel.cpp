@@ -35,15 +35,19 @@ constexpr float kHeaderRule = 20.0f;
 constexpr float kListX = 6.0f, kListY = 24.0f, kListW = 150.0f, kRowH = 11.0f;
 constexpr float kThumbX = 8.0f, kThumbInset = 1.0f;
 constexpr float kRowTextX = 28.0f, kRowRight = 152.5f;
+constexpr float kListOnlyTextX = 10.0f;  // area names in the list without pictures
 constexpr float kPicX = 164.0f, kPicY = 24.0f, kPicW = 150.0f, kPicH = 84.0f;
 constexpr float kNameBase = 118.5f, kDetailBase = 126.5f;
 constexpr float kFooterRule = 129.5f, kFooterMid = 134.75f;
-constexpr float kRight = 314.0f;
+// Right edge of the header and footer, in units: the panel's width less the side margin.
+constexpr float kRight = kPanelUnitsW - kPad, kListOnlyRight = kListPanelUnitsW - kPad;
 
 struct Layout {
-    int s;
-    float u(float units) const { return units * static_cast<float>(s); }
-    int px(float units) const { return static_cast<int>(units * static_cast<float>(s) + 0.5f); }
+    int s;          // screen scale (2 or 3): picks the glyph set and picture size
+    bool pictures;  // thumbnails and the picture on the right; otherwise the panel is the list alone
+    float right;    // right edge of the header and footer, in units
+    float u(float units) const { return units * unitPixels(s); }
+    int px(float units) const { return pixels(units, s); }
 };
 
 int pictureOf(int area) { return area >= 0 && area < kAreaCount ? pictures::find(kAreas[area].banc) : -1; }
@@ -93,16 +97,23 @@ float buttonMark(Canvas& c, const Layout& l, float x, float middle, const char* 
 // ---- Header -----------------------------------------------------------------------------------------------------
 
 void paintHeader(Canvas& c, const Layout& l, const MenuView& view) {
-    assets::drawText(c, Font::Title, l.s, l.px(kPad + 2), l.px(kHeaderBase), "Fast Travel", kGold);
-
     // Age tabs, right-aligned: [X] (Young) (Adult); the shown list's tab is filled.
     const float pillH = l.u(10), pillTop = l.u(5), pad = l.u(5), gap = l.u(3);
     const char* labels[2] = {"Young", "Adult"};
     float widths[2];
     for (int i = 0; i < 2; ++i) { widths[i] = assets::textWidth(Font::Small, l.s, labels[i]) + 2 * pad; }
-    float x = l.u(kRight) - widths[0] - widths[1] - gap;
+    float x = l.u(l.right) - widths[0] - widths[1] - gap;
     const float middle = pillTop + pillH * 0.5f;
-    buttonMark(c, l, x - l.u(12.5f), middle, "X");
+    const float markX = x - l.u(12.5f);
+    buttonMark(c, l, markX, middle, "X");
+
+    // Without the picture, the open area's name takes the title's place on its spot list.
+    if (!l.pictures && view.page == Page::Spots) {
+        assets::drawText(c, Font::Body, l.s, l.px(kPad + 2), centredBase(Font::Body, l.s, middle), kAreas[view.area].title,
+                         kGold, static_cast<int>(markX - l.u(kPad + 2) - l.u(4)));
+    } else {
+        assets::drawText(c, Font::Title, l.s, l.px(kPad + 2), l.px(kHeaderBase), "Fast Travel", kGold);
+    }
     for (int i = 0; i < 2; ++i) {
         const bool on = (i == 0) == (view.list == Age::Young);
         if (on) {
@@ -114,7 +125,7 @@ void paintHeader(Canvas& c, const Layout& l, const MenuView& view) {
                          labels[i], on ? kOnGold : kTextDim);
         x += widths[i] + gap;
     }
-    c.fillRect(l.u(kPad), l.u(kHeaderRule), l.u(kRight - kPad), l.s >= 3 ? 1.5f : 1.0f, kDivider);
+    c.fillRect(l.u(kPad), l.u(kHeaderRule), l.u(l.right - kPad), l.s >= 3 ? 1.5f : 1.0f, kDivider);
 }
 
 // ---- List -------------------------------------------------------------------------------------------------------
@@ -166,19 +177,21 @@ void paintList(Canvas& c, const Layout& l, const MenuView& view) {
         }
         const int index = shownArea(view, listFirst, i - kTopRows);
         const Area& rowArea = kAreas[index];
-        const Picture thumb = pictures::thumbnail(pictureOf(index), l.s);
-        const int tx = l.px(kThumbX), ty = static_cast<int>(y + l.u(kThumbInset) + 0.5f);
-        if (thumb.rgb != nullptr) {
-            c.drawPicture(thumb.rgb, thumb.width, thumb.height, tx, ty, l.u(1.5f));
-        } else {
-            c.fillRoundRect(tx, ty, l.u(16), l.u(9), l.u(1.5f), kPlaceholder);
+        if (l.pictures) {
+            const Picture thumb = pictures::thumbnail(pictureOf(index), l.s);
+            const int tx = l.px(kThumbX), ty = static_cast<int>(y + l.u(kThumbInset) + 0.5f);
+            if (thumb.rgb != nullptr) {
+                c.drawPicture(thumb.rgb, thumb.width, thumb.height, tx, ty, l.u(1.5f));
+            } else {
+                c.fillRoundRect(tx, ty, l.u(16), l.u(9), l.u(1.5f), kPlaceholder);
+            }
         }
         const Number spotsCount(shownSpots(view, rowArea));
         const int w = assets::textWidth(Font::Small, l.s, spotsCount.text);
         assets::drawText(c, Font::Small, l.s, right - w, centredBase(Font::Small, l.s, middle), spotsCount.text,
                          selected ? kGold : kTextFaint);
-        assets::drawText(c, Font::Body, l.s, l.px(kRowTextX), base, rowArea.title, text,
-                         right - w - l.px(4) - l.px(kRowTextX));
+        const int textX = l.px(l.pictures ? kRowTextX : kListOnlyTextX);
+        assets::drawText(c, Font::Body, l.s, textX, base, rowArea.title, text, right - w - l.px(4) - textX);
     }
 
     // Scroll bar when the list is longer than the rows shown.
@@ -239,21 +252,43 @@ void paintDetail(Canvas& c, const Layout& l, const MenuView& view) {
 
 // ---- Footer -----------------------------------------------------------------------------------------------------
 
-// What A does on the cursor row, while no warp status is shown.
-const char* listHint(const MenuView& view, bool spots, bool autosaveRow) {
+// What A does on the cursor row, while no warp status is shown. `brief` gives the forms that fit the narrow footer of
+// the list-only panel.
+const char* listHint(const MenuView& view, bool spots, bool autosaveRow, bool brief) {
 #if FAST_TRAVEL_VISITED_ONLY
     if (!spots && shownAreas(view, view.list) == 0) {
-        return view.list == Age::Adult && !view.visits.adult ? "Opens when Link first grows up" : "No places visited yet";
+        if (view.list == Age::Adult && !view.visits.adult) {
+            return brief ? "After Link grows up" : "Opens when Link first grows up";
+        }
+        return "No places visited yet";
     }
 #endif
     if (view.link != KnownAge::Unknown && (view.link == KnownAge::Young) != (view.list == Age::Young)) {
-        if (spots) { return "Link changes age first, at the Temple of Time"; }
+        if (spots) { return brief ? "Changes age first" : "Link changes age first, at the Temple of Time"; }
+        if (brief) { return view.link == KnownAge::Young ? "Makes Link adult" : "Makes Link young"; }
         return view.link == KnownAge::Young ? "Link is young: these warps change his age"
                                             : "Link is adult: these warps change his age";
     }
     if (spots) { return "Pick a spot to warp to"; }
-    if (autosaveRow) { return "Turn the game's automatic saves on or off"; }
+    if (autosaveRow) { return brief ? "Game saves on or off" : "Turn the game's automatic saves on or off"; }
     return "Pick an area";
+}
+
+// The warp status, shortened where the list-only panel's footer needs it.
+const char* footerStatus(Status status, bool brief) {
+    if (brief) {
+        switch (status) {
+        case Status::ToTemple: return "To the Temple of Time...";
+        case Status::SceneRunning: return "Not now: scene playing";
+        case Status::Refused: return "Warp refused";
+        case Status::Paused: return "Not now: game paused";
+        case Status::AgeDidNotChange: return "Age did not change";
+        case Status::AlreadyWarping: return "A warp is running";
+        case Status::AutosaveOff: return "Autosave off for now";
+        default: break;
+        }
+    }
+    return statusText(status);
 }
 
 Color statusColor(Status status) {
@@ -262,7 +297,7 @@ Color statusColor(Status status) {
 }
 
 void paintFooter(Canvas& c, const Layout& l, const MenuView& view) {
-    c.fillRect(l.u(kPad), l.u(kFooterRule), l.u(kRight - kPad), l.s >= 3 ? 1.5f : 1.0f, kDivider);
+    c.fillRect(l.u(kPad), l.u(kFooterRule), l.u(l.right - kPad), l.s >= 3 ? 1.5f : 1.0f, kDivider);
     const bool spots = view.page == Page::Spots;
     const bool autosaveRow = !spots && view.areaRow < kTopRows;
     const float middle = l.u(kFooterMid);
@@ -272,7 +307,7 @@ void paintFooter(Canvas& c, const Layout& l, const MenuView& view) {
         const char* label;
     };
     const Hint hints[2] = {{"A", spots ? "Warp" : (autosaveRow ? "Switch" : "Open")}, {"B", spots ? "Back" : "Close"}};
-    float x = l.u(kRight);
+    float x = l.u(l.right);
     for (int i = 1; i >= 0; --i) {
         const int w = assets::textWidth(Font::Small, l.s, hints[i].label);
         x -= w;
@@ -284,7 +319,7 @@ void paintFooter(Canvas& c, const Layout& l, const MenuView& view) {
     }
 
     const bool ready = view.status == Status::Ready;
-    const char* status = ready ? listHint(view, spots, autosaveRow) : statusText(view.status);
+    const char* status = ready ? listHint(view, spots, autosaveRow, !l.pictures) : footerStatus(view.status, !l.pictures);
     const Color color = ready ? kTextFaint : statusColor(view.status);
     const int maxW = static_cast<int>(x - l.u(kPad + 2) - l.u(4));
     assets::drawText(c, Font::Small, l.s, l.px(kPad + 2), centredBase(Font::Small, l.s, middle), status, color, maxW);
@@ -292,14 +327,14 @@ void paintFooter(Canvas& c, const Layout& l, const MenuView& view) {
 
 }  // namespace
 
-void paintPanel(Canvas& canvas, const MenuView& view, int scale) {
-    const Layout l{scale};
+void paintPanel(Canvas& canvas, const MenuView& view, int scale, bool pictures) {
+    const Layout l{scale, pictures, pictures ? kRight : kListOnlyRight};
     canvas.fillGradient(kBackTop, kBackBottom);
     // The panel's rim; the overlay copies only the inside of the same rounded outline onto the screen.
     canvas.strokeRoundRect(0, 0, canvas.width(), canvas.height(), panelCorner(scale), scale >= 3 ? 1.5f : 1.0f, kEdge);
     paintHeader(canvas, l, view);
     paintList(canvas, l, view);
-    paintDetail(canvas, l, view);
+    if (pictures) { paintDetail(canvas, l, view); }
     paintFooter(canvas, l, view);
 }
 

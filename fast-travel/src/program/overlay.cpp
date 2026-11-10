@@ -194,12 +194,12 @@ ThreadSlot* claimSlot(uintptr_t key) {
 // Copies queued for earlier frames may still be reading the shown image, so a repaint goes into the other image and
 // the copies switch to it once it is finished. Painting the shown image in place flickered in colour on
 // every repaint: its pixels held unconverted bytes until the conversion pass.
-constexpr size_t kImageSlotBytes = 394u << 12;  // 1,613,824: one 960x420 image at a row stride of 3840
+constexpr size_t kImageSlotBytes = 624u << 12;  // 2,555,904: one 1200x525 image at a row stride of up to 4864
 constexpr size_t kImageBytes = 2 * kImageSlotBytes;
 constexpr int kMinScreenWidth = 640;
 constexpr int kMinScreenHeight = 360;
-constexpr int kMaxPanelWidth = ui::kPanelUnitsW * 3, kMaxPanelHeight = ui::kPanelUnitsH * 3;
-constexpr int kMaxCorner = ui::kPanelCornerUnits * 3;
+constexpr int kMaxPanelWidth = ui::panelWidth(3, true), kMaxPanelHeight = ui::panelHeight(3);
+constexpr int kMaxCorner = ui::panelCorner(3);
 
 alignas(65536) unsigned char s_imageMemory[kImageBytes];
 Opaque s_pool;
@@ -211,6 +211,7 @@ bool s_imageReady = false;
 bool s_imageFailed = false;
 unsigned char* s_pixels = nullptr;
 int s_imageFormat = -1, s_scale = 0, s_width = 0, s_height = 0, s_stride = 0;
+bool s_pictures = false;  // the panel layout with pictures (picture files were found on the SD card)
 size_t s_imageSize = 0;
 u32 s_paintedVersion = ~0u;
 SpinLock s_imageLock;
@@ -282,7 +283,7 @@ void paint(const MenuView& view) {
     const int back = s_front ^ 1;
     // The canvas's pixel layout is the RGBA8 one, so those formats need no conversion.
     ui::Canvas canvas(reinterpret_cast<u32*>(s_pixels + back * kImageSlotBytes), s_width, s_height, s_stride / 4);
-    ui::paintPanel(canvas, view, s_scale);
+    ui::paintPanel(canvas, view, s_scale, s_pictures);
     if (s_imageFormat == kFormatR11G11B10F) {
         for (int y = 0; y < s_height; ++y) {
             u32* row = canvas.row(y);
@@ -332,11 +333,13 @@ bool ensurePool() {
 }
 
 // The menu image: linear, in the screen image's format when the module can write that format (RGBA8 otherwise, and
-// the 2D engine converts). Scale 3 at 1000+ rows, else 2: 960x420 or 640x280 pixels.
+// the 2D engine converts). Scale 3 at 1000+ rows, else 2: 1200x525 or 800x350 pixels with pictures, 615x525 or
+// 410x350 for the list alone. The first call looks for picture files on the SD card to choose the layout.
 bool ensureImage(int screenFormat, int screenHeight) {
     const int format = packable(screenFormat) ? screenFormat : kFormatRGBA8;
     const int scale = screenHeight >= 1000 ? 3 : 2;
-    if (s_imageReady && format == s_imageFormat && scale == s_scale) { return true; }
+    const bool pictures = ui::pictures::available();
+    if (s_imageReady && format == s_imageFormat && scale == s_scale && pictures == s_pictures) { return true; }
     if (s_imageFailed || !ensurePool()) { return false; }
     const Api& a = s_api;
     if (s_imageReady) {
@@ -344,7 +347,7 @@ bool ensureImage(int screenFormat, int screenHeight) {
         a.texFinalize(&s_image[1]);
         s_imageReady = false;
     }
-    const int width = ui::panelWidth(scale);
+    const int width = ui::panelWidth(scale, pictures);
     const int height = ui::panelHeight(scale);
     int alignment = 0;
     if (a.deviceInteger != nullptr) { a.deviceInteger(s_device, kDeviceInfoLinearStrideAlignment, &alignment); }
@@ -374,6 +377,7 @@ bool ensureImage(int screenFormat, int screenHeight) {
     s_imageReady = true;
     s_imageFormat = format;
     s_scale = scale;
+    s_pictures = pictures;
     s_width = width;
     s_height = height;
     s_stride = stride;
@@ -381,10 +385,10 @@ bool ensureImage(int screenFormat, int screenHeight) {
     s_paintedVersion = ~0u;
     buildLut(format);
     buildInsets(ui::panelCorner(scale));
-    WTLOG("menu images ready (two): %dx%d, format %d (screen format %d), row stride %d (device alignment %d), %llu bytes, "
-          "storage alignment %llu",
-          width, height, format, screenFormat, stride, alignment, static_cast<unsigned long long>(bytes),
-          static_cast<unsigned long long>(storageAlignment));
+    WTLOG("menu images ready (two, %s): %dx%d, format %d (screen format %d), row stride %d (device alignment %d), "
+          "%llu bytes, storage alignment %llu",
+          pictures ? "with pictures" : "list only", width, height, format, screenFormat, stride, alignment,
+          static_cast<unsigned long long>(bytes), static_cast<unsigned long long>(storageAlignment));
     return true;
 }
 

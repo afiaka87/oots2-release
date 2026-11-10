@@ -1,7 +1,7 @@
-// The area pictures. Built in: BC1-compressed pictures compiled into the module (kPictureFile, made by
-// tools/make_assets.py embedded), scaled to the preview and thumbnail sizes when shown. Optional override: the SD card's
-// fast-travel/pictures.bin (made by tools/make_assets.py pictures), raw RGB previews and thumbnails per screen scale,
-// opened the first time the menu is painted; when it is present it replaces the built-in pictures.
+// The area pictures: the player's own JPEG files on the SD card, fast-travel/pictures/<GameBancParam name>.jpg
+// (baseline JPEG, any size; 16:9 is shown whole, other shapes are cropped to 16:9 about the centre). Each is decoded
+// and scaled when the menu first shows it: the thumbnails are kept, and the cursor's area keeps its large picture.
+// Without any picture file the menu shows the list alone.
 #pragma once
 
 #include <cstdint>
@@ -18,10 +18,14 @@ namespace pictures {
 // Allows reading the SD card; called once at start-up when the game's file routines matched.
 void enable();
 
-// Index of the picture named after a GameBancParam name, or -1. The first call reads the file's picture table.
+// True when at least one area's picture file opens; the first call looks. The answer does not change later.
+bool available();
+
+// Index of the picture named after a GameBancParam name, or -1.
 int find(const char* name);
+// The picture's thumbnail at this screen scale, decoded on first use. Empty when its file is missing or unreadable.
 Picture thumbnail(int picture, int scale);
-// Reads (and caches) the picture's preview. Empty on failure; a failed picture is not retried.
+// The picture's large preview at this screen scale; one is kept. Empty when its file is missing or unreadable.
 Picture preview(int picture, int scale);
 
 }  // namespace pictures

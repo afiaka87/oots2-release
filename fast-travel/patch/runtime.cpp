@@ -25,7 +25,7 @@ static_assert(sizeof(PatchAnchor) == 16 && sizeof(PatchHeader) == 32);
 constexpr u32 kMagic = 0x31505446;  // "FTP1"
 constexpr std::size_t kRegionAlignment = 0x10000;  // the menu image's memory pool storage is 64 KiB aligned
 constexpr std::size_t kPage = 0x1000;
-constexpr std::size_t kMaxRegionBytes = 0x400000;
+constexpr std::size_t kMaxRegionBytes = 0x800000;  // 8 MiB
 constexpr u32 kTextEnd = 0x3C461D0;
 
 struct HookBit {
