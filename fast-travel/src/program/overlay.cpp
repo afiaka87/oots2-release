@@ -5,10 +5,7 @@
 #include "menu.hpp"
 #include "ui/assets.hpp"
 #include "ui/panel.hpp"
-
-// data/assets.bin, linked in by the build (bin2o; its size is the distance to assets_bin_end).
-extern "C" const u8 assets_bin[];
-extern "C" const u8 assets_bin_end[];
+#include "ui/pictures.hpp"
 
 namespace warp {
 namespace {
@@ -190,20 +187,24 @@ ThreadSlot* claimSlot(uintptr_t key) {
 
 // ---- The menu image ------------------------------------------------------------------------------------------
 
-// The panel is painted on the CPU (ui/panel.cpp) into s_canvas, converted into the screen image's format in a linear
-// image in the module's own memory, and copied onto the screen image each time the "UI 2D" or "UI_2D_Overlay" layer
-// binds it as a drawing target. The copy follows the panel's rounded outline: one copy per run of rows with the same
-// corner inset, so the game shows through outside the corners.
-constexpr size_t kImageBytes = 2u << 20;
+// The panel is painted on the CPU (ui/panel.cpp) into one of two linear images in the module's own memory, converted
+// in place into the screen image's format, and copied onto the screen image each time the "UI 2D" or "UI_2D_Overlay"
+// layer binds it as a drawing target. The copy follows the panel's rounded outline: one copy per run of rows with the
+// same corner inset, so the game shows through outside the corners.
+// Copies queued for earlier frames may still be reading the shown image, so a repaint goes into the other image and
+// the copies switch to it once it is finished. Painting the shown image in place flickered in colour on
+// every repaint: its pixels held unconverted bytes until the conversion pass.
+constexpr size_t kImageSlotBytes = 394u << 12;  // 1,613,824: one 960x420 image at a row stride of 3840
+constexpr size_t kImageBytes = 2 * kImageSlotBytes;
 constexpr int kMinScreenWidth = 640;
 constexpr int kMinScreenHeight = 360;
 constexpr int kMaxPanelWidth = ui::kPanelUnitsW * 3, kMaxPanelHeight = ui::kPanelUnitsH * 3;
 constexpr int kMaxCorner = ui::kPanelCornerUnits * 3;
 
 alignas(65536) unsigned char s_imageMemory[kImageBytes];
-alignas(16) u32 s_canvas[kMaxPanelWidth * kMaxPanelHeight];
 Opaque s_pool;
-Opaque s_image;
+Opaque s_image[2];
+int s_front = 0;  // the image the copies read
 bool s_poolReady = false;
 bool s_poolCached = false;
 bool s_imageReady = false;
@@ -278,22 +279,23 @@ int insetAt(int y) {
 }
 
 void paint(const MenuView& view) {
-    ui::Canvas canvas(s_canvas, s_width, s_height);
+    const int back = s_front ^ 1;
+    // The canvas's pixel layout is the RGBA8 one, so those formats need no conversion.
+    ui::Canvas canvas(reinterpret_cast<u32*>(s_pixels + back * kImageSlotBytes), s_width, s_height, s_stride / 4);
     ui::paintPanel(canvas, view, s_scale);
-    const bool linear = s_imageFormat == kFormatR11G11B10F;
-    for (int y = 0; y < s_height; ++y) {
-        const u32* src = canvas.row(y);
-        auto* dst = reinterpret_cast<u32*>(s_pixels + static_cast<size_t>(y) * s_stride);
-        if (!linear) {
-            std::memcpy(dst, src, static_cast<size_t>(s_width) * 4);
-            continue;
-        }
-        for (int x = 0; x < s_width; ++x) {
-            const u32 p = src[x];
-            dst[x] = s_lut[0][p & 0xFF] | s_lut[1][(p >> 8) & 0xFF] | s_lut[2][(p >> 16) & 0xFF];
+    if (s_imageFormat == kFormatR11G11B10F) {
+        for (int y = 0; y < s_height; ++y) {
+            u32* row = canvas.row(y);
+            for (int x = 0; x < s_width; ++x) {
+                const u32 p = row[x];
+                row[x] = s_lut[0][p & 0xFF] | s_lut[1][(p >> 8) & 0xFF] | s_lut[2][(p >> 16) & 0xFF];
+            }
         }
     }
-    if (s_poolCached && s_api.poolFlush != nullptr) { s_api.poolFlush(&s_pool, 0, s_imageSize); }
+    if (s_poolCached && s_api.poolFlush != nullptr) {
+        s_api.poolFlush(&s_pool, static_cast<ptrdiff_t>(back * kImageSlotBytes), s_imageSize);
+    }
+    s_front = back;
     s_paintedVersion = view.version;
 }
 
@@ -338,7 +340,8 @@ bool ensureImage(int screenFormat, int screenHeight) {
     if (s_imageFailed || !ensurePool()) { return false; }
     const Api& a = s_api;
     if (s_imageReady) {
-        a.texFinalize(&s_image);
+        a.texFinalize(&s_image[0]);
+        a.texFinalize(&s_image[1]);
         s_imageReady = false;
     }
     const int width = ui::panelWidth(scale);
@@ -356,11 +359,18 @@ bool ensureImage(int screenFormat, int screenHeight) {
     a.texFlags(&builder, kTextureFlagLinear);
     a.texStride(&builder, stride);
     const size_t bytes = a.texStorageSize(&builder), storageAlignment = a.texStorageAlignment(&builder);
-    if (bytes == 0 || bytes > kImageBytes || static_cast<size_t>(stride) * height > kImageBytes) {
+    if (bytes == 0 || bytes > kImageSlotBytes || static_cast<size_t>(stride) * height > kImageSlotBytes ||
+        kImageSlotBytes % (storageAlignment != 0 ? storageAlignment : 1) != 0) {
         return failImage("image size", static_cast<long long>(bytes));
     }
-    a.texStorage(&builder, &s_pool, 0);
-    if (!a.texInit(&s_image, &builder)) { return failImage("image", format); }
+    for (int i = 0; i < 2; ++i) {
+        a.texStorage(&builder, &s_pool, static_cast<ptrdiff_t>(i * kImageSlotBytes));
+        if (!a.texInit(&s_image[i], &builder)) {
+            if (i == 1) { a.texFinalize(&s_image[0]); }
+            return failImage("image", format);
+        }
+    }
+    s_front = 0;
     s_imageReady = true;
     s_imageFormat = format;
     s_scale = scale;
@@ -371,7 +381,7 @@ bool ensureImage(int screenFormat, int screenHeight) {
     s_paintedVersion = ~0u;
     buildLut(format);
     buildInsets(ui::panelCorner(scale));
-    WTLOG("menu image ready: %dx%d, format %d (screen format %d), row stride %d (device alignment %d), %llu bytes, "
+    WTLOG("menu images ready (two): %dx%d, format %d (screen format %d), row stride %d (device alignment %d), %llu bytes, "
           "storage alignment %llu",
           width, height, format, screenFormat, stride, alignment, static_cast<unsigned long long>(bytes),
           static_cast<unsigned long long>(storageAlignment));
@@ -425,14 +435,16 @@ void copyMenu(void* cmd, const void* screen, LayerKind kind) {
     const int format = a.textureFormat(screen);
     const MenuView view = menuView();
     if (!view.open) { return; }
+    int front = 0;
     {
         LockGuard guard(s_imageLock);
         if (!acceptScreen(width, height, format)) { return; }
         if (!ensureImage(format, height)) { return; }
         if (view.version != s_paintedVersion) { paint(view); }
+        front = s_front;
     }
     if (s_width > width || s_height > height) { return; }
-    const int x = width / 40;
+    const int x = width / 40 + s_width <= width ? width / 40 : width - s_width;
     const int y = height - s_height - height / 16;
     constexpr int kBarrier = kBarrierOrderFragments | kBarrierInvalidateTexture;
     a.barrier(cmd, kBarrier);
@@ -445,7 +457,7 @@ void copyMenu(void* cmd, const void* screen, LayerKind kind) {
         const CopyRegion source{inset, top, 0, s_width - 2 * inset, bottom - top, 1};
         const CopyRegion target{x + inset, y + top, 0, s_width - 2 * inset, bottom - top, 1};
         if (source.width > 0) {
-            a.copy(cmd, &s_image, nullptr, &source, screen, nullptr, &target, kCopyEngine2D);
+            a.copy(cmd, &s_image[front], nullptr, &source, screen, nullptr, &target, kCopyEngine2D);
             ++runs;
         }
         top = bottom;
@@ -521,11 +533,11 @@ HOOK_DEFINE_TRAMPOLINE(DrawLayer) {
 
 }  // namespace
 
-void installOverlayHooks() {
-    const size_t assetBytes = static_cast<size_t>(assets_bin_end - assets_bin);
-    const bool assets = ui::assets::init(assets_bin, assetBytes);
-    WTLOG("menu assets %s (%llu bytes)", assets ? "loaded" : "missing: the menu is drawn without pictures or text",
-          static_cast<unsigned long long>(assetBytes));
+void installOverlayHooks(bool pictureFiles) {
+    const bool fonts = ui::assets::init();
+    if (pictureFiles) { ui::pictures::enable(); }
+    WTLOG("menu fonts %s; area pictures %s", fonts ? "ready" : "malformed: the menu is drawn without text",
+          pictureFiles ? "read from the SD card on first open" : "off (file routines differ)");
     LoadGraphicsProcs::InstallAtOffset(kLoadGraphicsProcs.offset);
     DrawLayer::InstallAtOffset(kDrawLayer.offset);
 }

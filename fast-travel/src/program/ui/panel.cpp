@@ -1,6 +1,7 @@
 #include "panel.hpp"
 
 #include "assets.hpp"
+#include "pictures.hpp"
 
 namespace warp::ui {
 namespace {
@@ -45,15 +46,7 @@ struct Layout {
     int px(float units) const { return static_cast<int>(units * static_cast<float>(s) + 0.5f); }
 };
 
-int pictureOf(int area) {
-    static int s_pictures[kAreaCount];
-    static bool s_mapped = false;
-    if (!s_mapped && assets::ready()) {
-        for (int i = 0; i < kAreaCount; ++i) { s_pictures[i] = assets::findPicture(kAreas[i].banc); }
-        s_mapped = true;
-    }
-    return s_mapped && area >= 0 && area < kAreaCount ? s_pictures[area] : -1;
-}
+int pictureOf(int area) { return area >= 0 && area < kAreaCount ? pictures::find(kAreas[area].banc) : -1; }
 
 // Baseline that centres capital letters on the given middle line.
 int centredBase(Font font, int scale, float middlePx) {
@@ -173,7 +166,7 @@ void paintList(Canvas& c, const Layout& l, const MenuView& view) {
         }
         const int index = shownArea(view, listFirst, i - kTopRows);
         const Area& rowArea = kAreas[index];
-        const Picture thumb = assets::thumbnail(pictureOf(index), l.s);
+        const Picture thumb = pictures::thumbnail(pictureOf(index), l.s);
         const int tx = l.px(kThumbX), ty = static_cast<int>(y + l.u(kThumbInset) + 0.5f);
         if (thumb.rgb != nullptr) {
             c.drawPicture(thumb.rgb, thumb.width, thumb.height, tx, ty, l.u(1.5f));
@@ -223,7 +216,7 @@ void paintDetail(Canvas& c, const Layout& l, const MenuView& view) {
     }
 
     const Area& area = kAreas[view.area];
-    const Picture picture = assets::preview(pictureOf(view.area), l.s);
+    const Picture picture = pictures::preview(pictureOf(view.area), l.s);
     if (picture.rgb != nullptr) {
         c.drawPicture(picture.rgb, picture.width, picture.height, static_cast<int>(x + 0.5f), static_cast<int>(y + 0.5f),
                       radius);

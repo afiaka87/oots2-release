@@ -9,7 +9,8 @@
 
 namespace warp {
 
-// Installs the graphics table load and layer draw hooks (sites already checked).
-void installOverlayHooks();
+// Installs the graphics table load and layer draw hooks (sites already checked). pictureFiles: the game's file
+// routines matched, so the area pictures may be read from the SD card.
+void installOverlayHooks(bool pictureFiles);
 
 }  // namespace warp

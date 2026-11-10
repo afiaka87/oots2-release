@@ -1,17 +1,13 @@
 Fast Travel's original source is MIT licensed, copyright Clay Mullis.
 
-src/program/ext/picojpeg.c and picojpeg.h are picojpeg v1.1 by Rich Geldreich, in the public domain.
-Four colour-conversion writes of the form `*p++ = f(p[0])` were split into a write and an increment,
-since their order is undefined in C.
+The picture menu (src/program/ui/, tools/make_assets.py, assets/) is by samaBR85, contributed in pull request #1.
 
 The menu's text uses Inter (copyright The Inter Project Authors) and Cinzel (copyright The Cinzel Project Authors),
 both under the SIL Open Font License 1.1; the fonts and their licenses are in tools/fonts/. The
-compiled module holds glyphs drawn from them.
+compiled patch holds glyphs drawn from them.
 
 The area pictures in assets/areas/ were made with an image generator from text descriptions
 (assets/prompts.json); they are not taken from the game.
-
-src/program/font8x8.hpp is font8x8_basic by Daniel Hepper, from the IBM PC BIOS font, in the public domain.
 
 The v1.2.0 pchtxt builds with devkitPro/devkitA64 and uses imports from the game. The legacy subsdk5 builds include exlaunch, licensed under GPL-2.0. Upstream source: https://github.com/shadowninja108/exlaunch
 

@@ -1,33 +1,40 @@
-"""Builds data/assets.bin for the Fast Travel menu: area pictures (JPEG previews and raw RGB thumbnails, for screen
-scale 3 and 2) and anti-aliased glyph sets for the menu's fonts.
+"""Builds the Fast Travel menu's two asset files.
 
-Usage: python tools/make_assets.py assets/areas data/assets.bin
-(the picture for each area is <GameBancParam name>.jpg or .png in the first folder; the output goes into exlaunch's
-data/ folder, which the build links in with bin2o)
+  fonts <out.inc>              anti-aliased glyph sets, as a C array the patch build compiles into the module
+  pictures <folder> <out.bin>  one picture per area (raw RGB previews and thumbnails for screen scales 3 and 2),
+                               installed on the SD card as fast-travel/pictures.bin
 
-Blob layout (little-endian):
-  header:  'FTA1', u32 imageCount, u32 fontCount, u32 0
-  images:  imageCount x { char name[40]; u32 jpeg3Off, jpeg3Size, jpeg2Off, jpeg2Size, thumb3Off, thumb2Off }
-  fonts:   fontCount x { u32 id; i32 ascent; i32 descent; u32 glyphsOff }
-  glyphs:  per font 95 x { i16 xoff; i16 yoff; u16 w; u16 h; u16 advance64; u16 0; u32 bitmapOff } (chars 32-126)
-  data:    JPEGs, RGB888 thumbnails, 8-bit glyph coverage
+The picture for each area is <GameBancParam name>.jpg or .png in the folder; a missing picture is an error.
+
+Font file (little-endian; every offset is from the start of the file, and 0 means "none"):
+  header:  'FTF1', u32 fontCount, u32 glyphFirst (32), u32 glyphCount (95)
+  fonts:   fontCount x { u32 id; i32 ascent; i32 descent; u32 glyphsOff }   id = class * 10 + screen scale
+  glyphs:  per font glyphCount x { i16 xoff; i16 yoff; u16 w; u16 h; u16 advance64; u16 0; u32 bitmapOff }
+  data:    8-bit glyph coverage, w x h bytes per glyph
+
+Picture file:
+  header:  'FTI1', u32 imageCount, u32 0, u32 0
+  images:  imageCount x { char name[40]; u32 preview3Off, preview2Off, thumb3Off, thumb2Off, 0, 0 }
+  data:    RGB888 previews (450x252 and 300x168) and thumbnails (48x27 and 32x18), rows top-down
+
+The previews are raw so the patch needs no picture decoder (one decoder did not fit in the game's free space).
+
+The sizes and ids here must match src/program/ui/assets.cpp.
 """
-import io
-import os
 import re
 import struct
 import sys
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-INC = next(p for p in (os.path.join(HERE, "..", d, "program", "destinations.inc") for d in ("src", "source"))
-           if os.path.exists(p))
+HERE = Path(__file__).resolve().parent
+INC = HERE.parent / "src" / "program" / "destinations.inc"
 
 PREVIEW = {3: (450, 252), 2: (300, 168)}
 THUMB = {3: (48, 27), 2: (32, 18)}
+GLYPH_FIRST, GLYPH_COUNT = 32, 95
 
-# Font ids: class * 10 + screen scale. Classes must match overlay.cpp.
 FONTS = [
     # class, file, weight, px at scale 3, px at scale 2
     (0, "Cinzel.ttf", 700, 30, 20),  # menu title
@@ -38,39 +45,31 @@ FONTS = [
 ]
 
 
-def area_names():
-    text = open(INC, encoding="utf-8").read()
-    block = text[text.index("kAreas[]"):text.index("};", text.index("kAreas[]"))]
+def area_names() -> list[str]:
+    text = INC.read_text(encoding="utf-8")
+    start = text.index("kAreas[]")
     names = []
-    for name in re.findall(r'\{"([^"]+)"', block):
+    for name in re.findall(r'\{"([^"]+)"', text[start:text.index("};", start)]):
         if name not in names:
             names.append(name)
     return names
 
 
-def crop_16x9(im):
-    w, h = im.size
-    target = w * 9 / 16
-    if target <= h:
-        top = (h - target) / 2
-        return im.crop((0, round(top), w, round(top + target)))
-    width = h * 16 / 9
-    left = (w - width) / 2
-    return im.crop((round(left), 0, round(left + width), h))
+class Blob:
+    """A file built back to front: fixed-size tables first, then 4-byte aligned data appended after them."""
+
+    def __init__(self, table_bytes: int):
+        self.data = bytearray(table_bytes)
+
+    def put(self, payload: bytes) -> int:
+        self.data.extend(bytes(-len(self.data) % 4))
+        offset = len(self.data)
+        self.data.extend(payload)
+        return offset
 
 
-def jpeg(im, size):
-    buf = io.BytesIO()
-    im.resize(size, Image.LANCZOS).save(buf, "JPEG", quality=88, subsampling=0, progressive=False)
-    return buf.getvalue()
-
-
-def thumb(im, size):
-    return im.resize(size, Image.LANCZOS).convert("RGB").tobytes()
-
-
-def load_font(path, weight, px):
-    font = ImageFont.truetype(path, px)
+def load_font(path: Path, weight: int, px: int):
+    font = ImageFont.truetype(str(path), px)
     axes = font.get_variation_axes()
     values = []
     for axis in axes:
@@ -87,73 +86,73 @@ def load_font(path, weight, px):
     return font
 
 
-def glyphs(font):
-    out = []
-    for code in range(32, 127):
-        ch = chr(code)
-        advance64 = round(font.getlength(ch) * 64)
-        left, top, right, bottom = font.getbbox(ch, anchor="ls")
-        w, h = max(0, right - left), max(0, bottom - top)
-        bitmap = b""
-        if w > 0 and h > 0:
-            im = Image.new("L", (w, h), 0)
-            ImageDraw.Draw(im).text((-left, -top), ch, font=font, fill=255, anchor="ls")
-            bitmap = im.tobytes()
-        out.append((left, top, w, h, advance64, bitmap))
-    return out
+def build_fonts() -> bytes:
+    sets = [(cls * 10 + scale, load_font(HERE / "fonts" / file, weight, px))
+            for cls, file, weight, px3, px2 in FONTS for scale, px in ((3, px3), (2, px2))]
+    table = 16 + 16 * len(sets)
+    blob = Blob(table)
+    struct.pack_into("<4sIII", blob.data, 0, b"FTF1", len(sets), GLYPH_FIRST, GLYPH_COUNT)
+    for index, (font_id, font) in enumerate(sets):
+        rows = bytearray()
+        for code in range(GLYPH_FIRST, GLYPH_FIRST + GLYPH_COUNT):
+            ch = chr(code)
+            left, top, right, bottom = font.getbbox(ch, anchor="ls")
+            w, h = max(0, right - left), max(0, bottom - top)
+            offset = 0
+            if w and h:
+                im = Image.new("L", (w, h), 0)
+                ImageDraw.Draw(im).text((-left, -top), ch, font=font, fill=255, anchor="ls")
+                offset = blob.put(im.tobytes())
+            rows += struct.pack("<hhHHHHI", left, top, w, h, round(font.getlength(ch) * 64), 0, offset)
+        ascent, descent = font.getmetrics()
+        struct.pack_into("<IiiI", blob.data, 16 + 16 * index, font_id, ascent, descent, blob.put(bytes(rows)))
+    return bytes(blob.data)
 
 
-def main():
-    src, dst = sys.argv[1], sys.argv[2]
+def crop_16x9(im: Image.Image) -> Image.Image:
+    w, h = im.size
+    if w * 9 <= h * 16:
+        top = (h - w * 9 / 16) / 2
+        return im.crop((0, round(top), w, round(h - top)))
+    left = (w - h * 16 / 9) / 2
+    return im.crop((round(left), 0, round(w - left), h))
+
+
+def build_pictures(folder: Path) -> bytes:
     names = area_names()
-    data = bytearray()
-
-    def put(blob):
-        while len(data) % 4:
-            data.append(0)
-        off = len(data)
-        data.extend(blob)
-        return off
-
-    image_rows = []
-    for name in names:
-        path = next(p for p in (os.path.join(src, name + ext) for ext in (".jpg", ".png")) if os.path.exists(p))
+    blob = Blob(16 + 64 * len(names))
+    struct.pack_into("<4sIII", blob.data, 0, b"FTI1", len(names), 0, 0)
+    for index, name in enumerate(names):
+        path = next((p for p in (folder / f"{name}.jpg", folder / f"{name}.png") if p.exists()), None)
+        if path is None:
+            raise SystemExit(f"no picture for {name} in {folder}")
+        if len(name) >= 40:
+            raise SystemExit(f"area name too long for the picture table: {name}")
         im = crop_16x9(Image.open(path).convert("RGB"))
-        j3, j2 = jpeg(im, PREVIEW[3]), jpeg(im, PREVIEW[2])
-        row = (name, put(j3), len(j3), put(j2), len(j2), put(thumb(im, THUMB[3])), put(thumb(im, THUMB[2])))
-        image_rows.append(row)
+        fields = [blob.put(im.resize(size[scale], Image.LANCZOS).tobytes()) for size in (PREVIEW, THUMB) for scale in (3, 2)]
+        struct.pack_into("<40s6I", blob.data, 16 + 64 * index, name.encode(), *fields, 0, 0)
+    return bytes(blob.data)
 
-    font_rows = []
-    for cls, file, weight, px3, px2 in FONTS:
-        for scale, px in ((3, px3), (2, px2)):
-            font = load_font(os.path.join(HERE, "fonts", file), weight, px)
-            ascent, descent = font.getmetrics()
-            table = bytearray()
-            for left, top, w, h, adv, bitmap in glyphs(font):
-                off = put(bitmap) if bitmap else 0
-                table += struct.pack("<hhHHHHI", left, top, w, h, adv, 0, off)
-            font_rows.append((cls * 10 + scale, ascent, descent, put(bytes(table))))
 
-    header_size = 16 + len(image_rows) * (40 + 24) + len(font_rows) * 16
-    blob = bytearray(b"FTA1" + struct.pack("<III", len(image_rows), len(font_rows), 0))
-    for name, *offs in image_rows:
-        assert len(name) < 40
-        offs = [o + header_size if i % 2 == 0 or i >= 4 else o for i, o in enumerate(offs)]
-        blob += name.encode().ljust(40, b"\0") + struct.pack("<6I", *offs)
-    for fid, ascent, descent, goff in font_rows:
-        blob += struct.pack("<IiiI", fid, ascent, descent, goff + header_size)
-    assert len(blob) == header_size
-    # Glyph tables hold offsets relative to the data area; fix them up to blob offsets.
-    for fid, ascent, descent, goff in font_rows:
-        for g in range(95):
-            pos = goff + g * 16 + 12
-            (rel,) = struct.unpack_from("<I", data, pos)
-            if rel:
-                struct.pack_into("<I", data, pos, rel + header_size)
-    blob += data
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    open(dst, "wb").write(blob)
-    print(f"{len(image_rows)} images, {len(font_rows)} fonts, {len(blob) / 1024:.0f} KiB -> {dst}")
+def as_c_array(blob: bytes, name: str) -> str:
+    lines = [f"// Generated by tools/make_assets.py fonts; {len(blob)} bytes.",
+             f"alignas(4) inline constexpr unsigned char {name}[] = {{"]
+    for at in range(0, len(blob), 32):
+        lines.append("    " + ",".join(str(b) for b in blob[at:at + 32]) + ",")
+    lines.append("};\n")
+    return "\n".join(lines)
+
+
+def main() -> None:
+    if len(sys.argv) == 3 and sys.argv[1] == "fonts":
+        blob = build_fonts()
+        Path(sys.argv[2]).write_text(as_c_array(blob, "kFontFile"), encoding="utf-8")
+    elif len(sys.argv) == 4 and sys.argv[1] == "pictures":
+        blob = build_pictures(Path(sys.argv[2]))
+        Path(sys.argv[3]).write_bytes(blob)
+    else:
+        raise SystemExit(__doc__)
+    print(f"{sys.argv[1]}: {len(blob)} bytes -> {sys.argv[-1]}")
 
 
 if __name__ == "__main__":

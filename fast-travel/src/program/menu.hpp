@@ -1,12 +1,14 @@
-// The Fast Travel menu: its state and the controller handling that drives it. L3 opens and closes it. It shows one
-// age's list at a time (X switches to the other age's list; the menu opens on Link's current age). Pages:
+// The Fast Travel menu: its state and the controller handling that drives it. L3 + R3 (both sticks pressed in) opens
+// and closes it. It shows one age's list at a time (X switches to the other age's list; the menu opens on Link's
+// current age). Pages:
 // - the list: "Autosave" (on or off for this session), then the areas. A switches autosave or opens the area, B
 //   closes the menu;
 // - an area's spots: A warps, B goes back.
 // D-pad up and down move the cursor, left and right move a page at a time. A spot in the other age's list changes
-// Link's age first. A, B, X, Y and the D-pad are hidden from the game while the menu is open (and until each is
-// released after it closes); L3 is always hidden from the game. The visited-places build (FAST_TRAVEL_VISITED_ONLY)
-// lists only the places the save records as visited and, in them, the spots Link has arrived at or gone through.
+// Link's age first. A, B, X, Y, the D-pad, L3 and R3 are hidden from the game while the menu is open (and until each
+// is released after it closes); while the menu is closed, L3 or R3 alone reaches the game. The visited-places build
+// (FAST_TRAVEL_VISITED_ONLY) lists only the places the save records as visited and, in them, the spots Link has
+// arrived at or gone through.
 #pragma once
 
 #include "destinations.hpp"

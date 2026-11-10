@@ -8,12 +8,14 @@ constexpr u64 kButtonB = 1ull << 1;
 constexpr u64 kButtonX = 1ull << 2;
 constexpr u64 kButtonY = 1ull << 3;
 constexpr u64 kButtonL3 = 1ull << 4;  // the left stick pressed in
+constexpr u64 kButtonR3 = 1ull << 5;  // the right stick pressed in
 constexpr u64 kButtonLeft = 1ull << 12;
 constexpr u64 kButtonUp = 1ull << 13;
 constexpr u64 kButtonRight = 1ull << 14;
 constexpr u64 kButtonDown = 1ull << 15;
+constexpr u64 kMenuChord = kButtonL3 | kButtonR3;  // both sticks pressed in: opens and closes the menu
 constexpr u64 kMenuButtons =
-    kButtonA | kButtonB | kButtonX | kButtonY | kButtonUp | kButtonDown | kButtonLeft | kButtonRight;
+    kButtonA | kButtonB | kButtonX | kButtonY | kButtonUp | kButtonDown | kButtonLeft | kButtonRight | kMenuChord;
 constexpr u32 kAttributeConnected = 1u << 0;
 
 constexpr int kForms = 5;
@@ -137,11 +139,11 @@ void closeMenu(u64 held) {
     changed();
 }
 
-// L3: closes the menu, or opens it on Link's own age's list (or the last list shown while his age is not known).
+// L3 + R3: closes the menu, or opens it on Link's own age's list (or the last list shown while his age is not known).
 void toggleMenu(u64 held) {
     if (s_menu.open) {
         closeMenu(held);
-        WTLOG("menu closed (L3)");
+        WTLOG("menu closed (L3 + R3)");
         return;
     }
     if (s_menu.link != KnownAge::Unknown) { showList(s_menu.link == KnownAge::Young ? Age::Young : Age::Adult); }
@@ -150,7 +152,7 @@ void toggleMenu(u64 held) {
 #endif
     s_menu.open = true;
     changed();
-    WTLOG("menu opened (L3): %s list, %s page, row %d, spot %d, status '%s'", ageName(s_menu.list),
+    WTLOG("menu opened (L3 + R3): %s list, %s page, row %d, spot %d, status '%s'", ageName(s_menu.list),
           s_menu.page == Page::Spots ? "spots" : "list", s_menu.areaRow + 1, s_menu.spot + 1,
           statusText(s_menu.status));
 }
@@ -218,8 +220,11 @@ void toggleAutosave() {
     WTLOG("autosave switched %s (this session)", s_menu.autosave ? "on" : "off");
 }
 
+// True on the update where the second stick goes in while the first is still held (either order, or both at once).
+bool chordPressed(u64 pressed, u64 held) { return (pressed & kMenuChord) != 0 && (held & kMenuChord) == kMenuChord; }
+
 void handlePresses(u64 pressed, u64 held) {
-    if ((pressed & kButtonL3) != 0) {
+    if (chordPressed(pressed, held)) {
         toggleMenu(held);
         return;
     }
@@ -371,15 +376,16 @@ void onPadStates(int form, NpadState* states, int count, const u32* npadId) {
     const u64 pressed = held & ~s_heldBefore;
     s_heldBefore = held;
     if (pressed != 0) {
-        if (!s_firstPressLogged && (pressed & kButtonL3) != 0) {
+        if (!s_firstPressLogged && chordPressed(pressed, held)) {
             s_firstPressLogged = true;
-            WTLOG("first L3 press seen: form %d, pad id %#x, buttons %#llx", form, npadId != nullptr ? *npadId : 0u,
+            WTLOG("first L3 + R3 press seen: form %d, pad id %#x, buttons %#llx", form, npadId != nullptr ? *npadId : 0u,
                   static_cast<unsigned long long>(held));
         }
         handlePresses(pressed, held);
     }
     s_hideUntilReleased &= held;
-    const u64 hide = kButtonL3 | s_hideUntilReleased | (s_menu.open ? kMenuButtons : 0);
+    // L3 and R3 on their own reach the game while the menu is closed; the chord that closes it is hidden until released.
+    const u64 hide = s_hideUntilReleased | (s_menu.open ? kMenuButtons : 0);
     for (int i = 0; i < count; ++i) { states[i].buttons &= ~hide; }
 }
 

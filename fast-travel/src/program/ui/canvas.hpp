@@ -16,11 +16,13 @@ constexpr uint32_t pack(Color c) { return c.r | (uint32_t{c.g} << 8) | (uint32_t
 
 class Canvas {
 public:
-    Canvas(uint32_t* pixels, int width, int height) : m_pixels(pixels), m_width(width), m_height(height) {}
+    // `stride` is the distance between rows in pixels (at least `width`).
+    Canvas(uint32_t* pixels, int width, int height, int stride)
+        : m_pixels(pixels), m_width(width), m_height(height), m_stride(stride) {}
 
     int width() const { return m_width; }
     int height() const { return m_height; }
-    uint32_t* row(int y) const { return m_pixels + static_cast<size_t>(y) * m_width; }
+    uint32_t* row(int y) const { return m_pixels + static_cast<size_t>(y) * m_stride; }
 
     void fill(Color c);
     // Vertical gradient over the whole surface.
@@ -39,7 +41,7 @@ public:
 private:
     void blend(int x, int y, Color c, int alpha);
     uint32_t* m_pixels;
-    int m_width, m_height;
+    int m_width, m_height, m_stride;
 };
 
 }  // namespace warp::ui
