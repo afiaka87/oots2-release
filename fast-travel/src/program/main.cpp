@@ -1,4 +1,4 @@
-// Fast Travel for the Ocarina of Time remake (Switch 2): an L3 menu at the bottom left
+// Fast Travel for the Ocarina of Time remake (Switch 2): an L3 + R3 menu at the bottom left
 // of the screen lists every area young or adult Link can visit (X switches the list) and, in each, the spots where the
 // game itself places him; A warps there. A warp fills the game's reserved next-area slots and requests the game's
 // half-second silent event; when that event ends, the game's own sequence loads the area with its usual fade. A spot
@@ -140,6 +140,12 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
         padCount += pads[i] ? 1 : 0;
     }
     const bool warps = update && called;
+    // The menu's area pictures are read from the SD card through the file routines; the visited build hooks OpenFile.
+    bool pictureFiles = true;
+    for (const Site* site : {&kOpenFile, &kGetFileSize, &kReadFile, &kCloseFile}) {
+        pictureFiles = siteMatches(*site, "the menu shows no area pictures",
+                                   FAST_TRAVEL_VISITED_ONLY && site == &kOpenFile) && pictureFiles;
+    }
 #if FAST_TRAVEL_VISITED_ONLY
     // The spot record beside each save slot needs the file open hook and every file function it calls. Without them
     // the spots reached still show for the session, but are not kept with the save.
@@ -156,7 +162,7 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
     WTLOG("step 2/3: sites checked: menu drawing %s, warps %s, autosave hold %s, controller types %d of 5",
           drawing ? "yes" : "no", warps ? "yes" : "no", warps && saves ? "yes" : "no", padCount);
     exl::hook::Initialize();
-    if (drawing) { installOverlayHooks(); }
+    if (drawing) { installOverlayHooks(pictureFiles); }
     if (warps) { ControllerCalc::InstallAtOffset(kControllerCalc.offset); }
     if (warps && saves) { AutoSaveRequest::InstallAtOffset(kAutoSaveRequest.offset); }
 #if FAST_TRAVEL_VISITED_ONLY
@@ -173,8 +179,8 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
 #else
 #define FAST_TRAVEL_LIST_NOTE ""
 #endif
-    WTLOG("step 3/3: hooks installed (menu drawing %s, warps %s, autosave hold %s, controller types %d of 5); L3 opens "
-          "the menu" FAST_TRAVEL_LIST_NOTE,
+    WTLOG("step 3/3: hooks installed (menu drawing %s, warps %s, autosave hold %s, controller types %d of 5); "
+          "L3 + R3 opens the menu" FAST_TRAVEL_LIST_NOTE,
           drawing ? "on" : "off", warps ? "on" : "off", warps && saves ? "on" : "off", padCount);
 }
 

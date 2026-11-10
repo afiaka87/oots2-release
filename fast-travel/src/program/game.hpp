@@ -58,12 +58,11 @@ constexpr Site kEventRequest{"event request", 0xD7A820, {0xB940B808, 0x37580808,
 constexpr Site kEventRequestMemberEnd{"event request clean-up", 0x20B6F0,
                                       {0xD503237F, 0xA9BC7BFD, 0xF9000BF7, 0xA90257F6}};
 
-#if FAST_TRAVEL_VISITED_ONLY
-// ---- Save files (visited-places build) ------------------------------------------------------------------------
+// ---- Files ----------------------------------------------------------------------------------------------------
 
 // Import entries of the nn::fs file functions. Every game file open (the save slots' progress.sav among them) goes
 // through OpenFile, which the visited-places build hooks; the others are called to keep its doorway record beside
-// each slot's progress.sav.
+// each slot's progress.sav. Both builds read the menu's area pictures from the SD card through them.
 constexpr Site kOpenFile{"file open", 0x3C42590, {0xB00083F0, 0xF9424A11, 0x91124210, 0xD61F0220}};
 constexpr Site kGetFileSize{"file size read", 0x3C425A0, {0xB00083F0, 0xF9424E11, 0x91126210, 0xD61F0220}};
 constexpr Site kCloseFile{"file close", 0x3C425B0, {0xB00083F0, 0xF9425211, 0x91128210, 0xD61F0220}};
@@ -83,6 +82,8 @@ constexpr int kOpenRead = 1;
 constexpr int kOpenWrite = 2;
 constexpr int kWriteFlush = 1;
 constexpr u32 kPathAlreadyExists = 0x402;  // nn::fs result for CreateFile on an existing file
+
+#if FAST_TRAVEL_VISITED_ONLY
 
 // Link's position (three floats), as the SeqGetPlayerPos node reads it: two loads from kPlayerInfoSlot, then +0x590.
 // An earlier test build logged plausible distances from it.

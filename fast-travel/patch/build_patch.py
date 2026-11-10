@@ -64,6 +64,8 @@ FLAGS = ["-std=gnu++26", "-Oz", "-fno-exceptions", "-fno-rtti", "-fno-unwind-tab
          "-fno-tree-switch-conversion", "-fno-strict-aliasing", "-fno-threadsafe-statics", "-fno-use-cxa-atexit",
          "-mno-outline-atomics", "-march=armv8.2-a+crc+crypto", "-fno-pic", "-fno-stack-protector",
          "-Wall", "-Wextra", "-Wno-unused-parameter", "-DFAST_TRAVEL_PATCH=1"]
+CXX_ONLY = {"-std=gnu++26", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics", "-fno-use-cxa-atexit"}
+C_FLAGS = ["-std=gnu17", "-Wno-shift-negative-value"] + [flag for flag in FLAGS if flag not in CXX_ONLY]
 
 
 def u32(data: bytes, at: int) -> int:
@@ -187,17 +189,21 @@ def load_imports(main: bytes) -> tuple[dict[str, int], dict[str, int]]:
     return stubs, slots
 
 
-def sdk_debug_delta(game_dir: Path) -> int:
+def sdk_deltas(game_dir: Path) -> tuple[int, int]:
+    """Distances from the SDK's tick export to its debug output routine and to nn::fs::MountSdCard."""
     header = (game_dir / "extract/exefs/sdk").read_bytes()[:0x100]
     if header[:4] != b"NSO0" or header[0x40:0x54].hex().upper() != SDK_BUILD_ID:
         raise ValueError("sdk build differs from the one the boots used")
     sdk = (game_dir / "sdk.bin").read_bytes()
-    tick, debug = 0x166370, 0x1A5568
+    tick, debug, mount = 0x166370, 0x1A5568, 0x10F0C0
     if sdk[tick:tick + 8] != bytes.fromhex("20e03bd5c0035fd6"):  # mrs x0, cntpct_el0; ret
         raise ValueError("sdk tick export changed")
     if sdk.count(bytes.fromhex("e10400d4c0035fd6")) != 1 or sdk.find(bytes.fromhex("e10400d4c0035fd6")) != debug:
         raise ValueError("sdk debug output routine (svc 0x27; ret) is not unique")
-    return debug - tick
+    # _ZN2nn2fs11MountSdCardEPKc's export value; src/program/ui/pictures.cpp checks the same first words.
+    if sdk[mount:mount + 16] != bytes.fromhex("7f2303d5ff0301d1fd7b01a9f51300f9"):
+        raise ValueError("sdk SD card mount routine changed")
+    return debug - tick, tick - mount
 
 
 def sign_extend(values, bits: int):
@@ -290,9 +296,13 @@ def tool(tool_bin: Path, name: str) -> str:
 
 
 def compile_module(out: Path, tool_bin: Path, visited: bool, hooks: list[tuple[str, int, int]],
-                   replay: dict[str, tuple[int, bool]], debug_delta: int) -> Path:
+                   replay: dict[str, tuple[int, bool]], deltas: tuple[int, int]) -> Path:
     gen = out / "generated"
     gen.mkdir(parents=True, exist_ok=True)
+    sys.path.insert(0, str(MOD / "tools"))
+    import make_assets  # noqa: E402  (needs Pillow)
+    fonts = make_assets.build_fonts()
+    (gen / "fonts.inc").write_text(make_assets.as_c_array(fonts, "kFontFile"), encoding="utf-8")
     (gen / "patch_hooks.inc").write_text(
         "".join(f"    {{{site:#x}, {bit}}},  // {name}\n" for name, site, bit in hooks), encoding="utf-8")
     (gen / "patch_adapters.inc").write_text(
@@ -300,19 +310,24 @@ def compile_module(out: Path, tool_bin: Path, visited: bool, hooks: list[tuple[s
                 for name, _, bit in hooks), encoding="utf-8")
     log = out / "commands.log"
     log.write_text("", encoding="utf-8")
-    flags = FLAGS + [f"-DFAST_TRAVEL_VISITED_ONLY={int(visited)}"]
     includes = [HERE / "include", SRC, gen]
-    sources = sorted(SRC.glob("*.cpp")) + [HERE / "runtime.cpp"]
+    sources = sorted(SRC.rglob("*.cpp")) + [HERE / "runtime.cpp"] + sorted(SRC.rglob("*.c"))
+    if len({source.stem for source in sources}) != len(sources):
+        raise ValueError("two sources share a file name")
     objects, warnings = [], []
     for source in sources:
         obj = out / f"{source.stem}.o"
-        text = run([tool(tool_bin, "g++"), *flags, *(f"-I{p}" for p in includes), "-c", str(source),
-                    "-o", str(obj)], log)
+        compiler, language = ("gcc", C_FLAGS) if source.suffix == ".c" else ("g++", FLAGS)
+        text = run([tool(tool_bin, compiler), *language, f"-DFAST_TRAVEL_VISITED_ONLY={int(visited)}",
+                    *(f"-I{p}" for p in includes), "-c", str(source), "-o", str(obj)], log)
         warnings += [line for line in text.splitlines() if "warning:" in line]
         objects.append(obj)
+    print(f"fonts: {len(fonts)} bytes built in")
+    debug_delta, mount_back = deltas
     adapter = out / "adapters.o"
     run([tool(tool_bin, "gcc"), f"-I{gen}", f"-DDEBUG_DELTA_PAGES={debug_delta >> 12}",
-         f"-DDEBUG_DELTA_LOW={debug_delta & 0xfff}", "-c", str(HERE / "adapters.S"), "-o", str(adapter)], log)
+         f"-DDEBUG_DELTA_LOW={debug_delta & 0xfff}", f"-DMOUNT_BACK_PAGES={mount_back >> 12}",
+         f"-DMOUNT_BACK_LOW={mount_back & 0xfff}", "-c", str(HERE / "adapters.S"), "-o", str(adapter)], log)
     objects.append(adapter)
     combined = out / "fast-travel-patch.o"
     run([tool(tool_bin, "ld"), "-r", *map(str, objects), "-o", str(combined)], log)
@@ -402,7 +417,7 @@ def read_object(path: Path, externals: dict[str, int], hooks: list[tuple[str, in
                 region_bytes = align(region_bytes, max(section["sh_addralign"], 1))
                 bases[index] = DATA + region_bytes
                 region_bytes += section["sh_size"]
-        if code_end >= DATA or align(region_bytes, 0x1000) > 0x400000:
+        if code_end >= DATA or align(region_bytes, 0x1000) > 0x800000:
             raise ValueError("compiled code or state exceeds its virtual range")
 
         symbols = {sym.name: bases[sym["st_shndx"]] + sym["st_value"] for sym in symtab.iter_symbols()
@@ -602,6 +617,9 @@ def layout(kit: patchkit.PatchKit, out: Path, obj: Path, hooks, externals: dict[
     pool = Gaps(gaps)
     mapped, connectors, placed = place_code(module, pool)
     head, chunks = emit_state(kit, module, mapped, pool)
+    left = sum(n * len(at) for n, at in pool.free.items())
+    print(f"gaps left: {sum(len(at) for at in pool.free.values())} gaps, {left} words; room for about "
+          f"{4 * (left - sum(len(at) for at in pool.free.values()))} more compressed state bytes")
     emit_code(kit, module, mapped, connectors, placed, head)
     put_branch(kit, NNMAIN, mapped[module.symbols["patch_start"]], enc_b(NNMAIN, NNMAIN_BODY))
     for name, site, _ in hooks:
@@ -670,10 +688,10 @@ def main() -> None:
                             image_path=args.game_dir / "main.bin")
     check_main_image(kit)
     hooks, externals, replay = prepare_hooks(kit.image, visited)
-    debug_delta = sdk_debug_delta(args.game_dir)
+    deltas = sdk_deltas(args.game_dir)
 
     out = (args.output_dir or args.game_dir / "build") / f"{slug}-work"
-    combined = compile_module(out, args.tool_bin, visited, hooks, replay, debug_delta)
+    combined = compile_module(out, args.tool_bin, visited, hooks, replay, deltas)
     if args.compile_only:
         print(run([tool(args.tool_bin, "size"), "-A", str(combined)], out / "commands.log"))
         print(run([tool(args.tool_bin, "nm"), "-u", str(combined)], out / "commands.log"))

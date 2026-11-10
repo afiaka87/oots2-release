@@ -26,6 +26,16 @@ patch_debug_routine:
     add x0, x0, #DEBUG_DELTA_LOW
     ret
 
+// nn::fs::MountSdCard, which the game does not import; it sits below the tick export in the SDK.
+.section .text.patch_sdk_mount_sdcard,"ax"
+.global patch_sdk_mount_sdcard
+patch_sdk_mount_sdcard:
+    adrp x0, patch_tick_slot
+    ldr x0, [x0, :lo12:patch_tick_slot]
+    sub x0, x0, #MOUNT_BACK_PAGES, lsl #12
+    sub x0, x0, #MOUNT_BACK_LOW
+    ret
+
 .macro hook name, bit, first_word, plt
     .section .text.patch_gate_\name,"ax"
     .global patch_gate_\name

@@ -2,8 +2,10 @@
 
 #include <cstring>
 
-#include "font8x8.hpp"
 #include "menu.hpp"
+#include "ui/assets.hpp"
+#include "ui/panel.hpp"
+#include "ui/pictures.hpp"
 
 namespace warp {
 namespace {
@@ -185,38 +187,38 @@ ThreadSlot* claimSlot(uintptr_t key) {
 
 // ---- The menu image ------------------------------------------------------------------------------------------
 
-constexpr int kColumns = 36;
-constexpr int kLines = 13;  // title, subtitle, list rows, status, controls
-static_assert(kVisibleRows + 4 == kLines, "menu layout");
-constexpr size_t kImageBytes = 2u << 20;
+// The panel is painted on the CPU (ui/panel.cpp) into one of two linear images in the module's own memory, converted
+// in place into the screen image's format, and copied onto the screen image each time the "UI 2D" or "UI_2D_Overlay"
+// layer binds it as a drawing target. The copy follows the panel's rounded outline: one copy per run of rows with the
+// same corner inset, so the game shows through outside the corners.
+// Copies queued for earlier frames may still be reading the shown image, so a repaint goes into the other image and
+// the copies switch to it once it is finished. Painting the shown image in place flickered in colour on
+// every repaint: its pixels held unconverted bytes until the conversion pass.
+constexpr size_t kImageSlotBytes = 624u << 12;  // 2,555,904: one 1200x525 image at a row stride of up to 4864
+constexpr size_t kImageBytes = 2 * kImageSlotBytes;
 constexpr int kMinScreenWidth = 640;
 constexpr int kMinScreenHeight = 360;
+constexpr int kMaxPanelWidth = ui::panelWidth(3, true), kMaxPanelHeight = ui::panelHeight(3);
+constexpr int kMaxCorner = ui::panelCorner(3);
 
 alignas(65536) unsigned char s_imageMemory[kImageBytes];
 Opaque s_pool;
-Opaque s_image;
+Opaque s_image[2];
+int s_front = 0;  // the image the copies read
 bool s_poolReady = false;
 bool s_poolCached = false;
 bool s_imageReady = false;
 bool s_imageFailed = false;
 unsigned char* s_pixels = nullptr;
 int s_imageFormat = -1, s_scale = 0, s_width = 0, s_height = 0, s_stride = 0;
+bool s_pictures = false;  // the panel layout with pictures (picture files were found on the SD card)
 size_t s_imageSize = 0;
 u32 s_paintedVersion = ~0u;
 SpinLock s_imageLock;
 u64 s_copies = 0;
-
-enum Color { kBackground, kBorder, kTitle, kText, kSelected, kDim, kStatus, kColors };
-
-struct Rgb {
-    float r, g, b;
-};
-// Display values (0-1). Linear formats get them gamma-decoded so they look the same after the game's output pass.
-constexpr Rgb kPalette[kColors] = {
-    {0.05f, 0.05f, 0.07f}, {0.45f, 0.45f, 0.50f}, {0.55f, 0.85f, 1.00f}, {0.92f, 0.92f, 0.92f},
-    {1.00f, 0.82f, 0.25f}, {0.60f, 0.60f, 0.62f}, {0.60f, 1.00f, 0.60f},
-};
-u32 s_packed[kColors] = {};
+int s_corner = 0;
+int s_inset[kMaxCorner] = {};  // pixels left out at each end of the top rows (mirrored at the bottom)
+u32 s_lut[3][256] = {};        // per-channel conversion of display bytes for the floating-point screen format
 
 u32 floatBits(float value) {
     u32 bits;
@@ -235,210 +237,66 @@ u32 smallFloat(float value, int mantissaBits) {
 }
 
 float gammaDecode(float value) {
-    // About value^2.2 on 0-1 (within 0.017), close enough for menu colours: value^2.25 times a factor near 1.
+    // About value^2.2 on 0-1 (within 0.017), close enough for the menu: value^2.25 times a factor near 1.
     float result = value * value;
     float root = value;
     for (int i = 0; i < 3; ++i) { root = __builtin_sqrtf(root); }  // value^(1/8)
     return result * root * root * (0.6f + 0.4f * root);
 }
 
-u8 toByte(float value) {
-    const float clamped = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
-    return static_cast<u8>(clamped * 255.0f + 0.5f);
-}
-
-u32 pack(const Rgb& c, int format) {
-    if (format == kFormatR11G11B10F) {
-        return smallFloat(gammaDecode(c.r), 6) | (smallFloat(gammaDecode(c.g), 6) << 11) |
-               (smallFloat(gammaDecode(c.b), 5) << 22);
-    }
-    return toByte(c.r) | (toByte(c.g) << 8) | (toByte(c.b) << 16) | (0xFFu << 24);
-}
-
 bool packable(int format) {
     return format == kFormatR11G11B10F || format == kFormatRGBA8 || format == kFormatRGBA8sRGB;
 }
 
-// Rows run top-down on the screen image (seen in game).
-void fillRow(int y, int x0, int x1, u32 value) {
-    if (y < 0 || y >= s_height) { return; }
-    auto* pixel = reinterpret_cast<u32*>(s_pixels + static_cast<size_t>(y) * s_stride);
-    for (int x = x0 < 0 ? 0 : x0; x < x1 && x < s_width; ++x) { pixel[x] = value; }
-}
-
-void drawText(int line, int firstColumn, const char* text, Color color) {
-    const int cell = 8 * s_scale;
-    const int top = 4 * s_scale + line * 10 * s_scale + s_scale;
-    const int left = 4 * s_scale;
-    const u32 value = s_packed[color];
-    for (int i = 0; firstColumn + i < kColumns && text[i] != '\0'; ++i) {
-        const u8* rows = font::glyph(text[i]);
-        for (int gy = 0; gy < font::kSize; ++gy) {
-            for (int gx = 0; gx < font::kSize; ++gx) {
-                if (((rows[gy] >> gx) & 1) == 0) { continue; }
-                const int x = left + (firstColumn + i) * cell + gx * s_scale;
-                for (int sy = 0; sy < s_scale; ++sy) { fillRow(top + gy * s_scale + sy, x, x + s_scale, value); }
-            }
-        }
+// The floating-point screen format holds linear light, so display values are gamma-decoded first and look the same
+// after the game's output pass. The RGBA8 formats take the display bytes as they are.
+void buildLut(int format) {
+    if (format != kFormatR11G11B10F) { return; }
+    for (int i = 0; i < 256; ++i) {
+        const float linear = gammaDecode(static_cast<float>(i) / 255.0f);
+        s_lut[0][i] = smallFloat(linear, 6);
+        s_lut[1][i] = smallFloat(linear, 6) << 11;
+        s_lut[2][i] = smallFloat(linear, 5) << 22;
     }
 }
 
-constexpr int textLength(const char* text) {
-    int n = 0;
-    while (text[n] != '\0') { ++n; }
-    return n;
-}
-
-// One menu line being composed: blanks, with text placed at columns.
-struct Line {
-    char text[kColumns + 1];
-
-    Line() {
-        for (char& c : text) { c = ' '; }
-        text[kColumns] = '\0';
-    }
-
-    void put(int column, const char* value, int maxLength = kColumns) {
-        for (int i = 0; value[i] != '\0' && i < maxLength && column + i < kColumns; ++i) {
-            if (column + i >= 0) { text[column + i] = value[i]; }
-        }
-    }
-
-    // Places text so that it ends just before column `end`.
-    void putRight(int end, const char* value) { put(end - textLength(value), value); }
-};
-
-// Decimal text of a small non-negative number.
-struct Number {
-    char text[12];
-
-    explicit Number(int value) {
-        char reversed[12];
-        int n = 0;
-        do {
-            reversed[n++] = static_cast<char>('0' + value % 10);
-            value /= 10;
-        } while (value > 0 && n < 11);
-        for (int i = 0; i < n; ++i) { text[i] = reversed[n - 1 - i]; }
-        text[n] = '\0';
-    }
-};
-
-// "position/count", as in "3/22".
-struct Position {
-    char text[24];
-
-    Position(int position, int count) {
-        const Number a(position), b(count);
-        int n = 0;
-        for (const char* c = a.text; *c != '\0'; ++c) { text[n++] = *c; }
-        text[n++] = '/';
-        for (const char* c = b.text; *c != '\0'; ++c) { text[n++] = *c; }
-        text[n] = '\0';
-    }
-};
-
-// Columns of a list row: the cursor at 0; for areas the name at 2 and the spot count ending at 34; for spots the
-// number ending at 4 and the label at 5; the scroll marks at 35.
-constexpr int kAreaTitleColumn = 2;
-constexpr int kAreaTitleLength = 26;
-constexpr int kAreaCountEnd = kColumns - 2;
-constexpr int kSpotNumberEnd = 4;
-constexpr int kSpotLabelColumn = 5;
-constexpr int kSpotLabelLength = kColumns - 1 - kSpotLabelColumn;
-constexpr int kMarkColumn = kColumns - 1;
-
-constexpr bool listFits() {
-    for (const Area& area : kAreas) {
-        if (textLength(area.title) > kAreaTitleLength || area.count > 99) { return false; }
-    }
-    for (const Spot& spot : kSpots) {
-        if (textLength(spot.label) > kSpotLabelLength) { return false; }
-    }
-    return kAreaCount <= 99;
-}
-static_assert(listFits(), "every area name, spot label and count fits its menu columns (catalog.py checks the same)");
-
-void paintFrame() {
-    for (int y = 0; y < s_height; ++y) { fillRow(y, 0, s_width, s_packed[kBackground]); }
-    for (int i = 0; i < s_scale; ++i) {
-        fillRow(i, 0, s_width, s_packed[kBorder]);
-        fillRow(s_height - 1 - i, 0, s_width, s_packed[kBorder]);
-    }
-    for (int y = 0; y < s_height; ++y) {
-        fillRow(y, 0, s_scale, s_packed[kBorder]);
-        fillRow(y, s_width - s_scale, s_width, s_packed[kBorder]);
+// Corner insets of the rounded outline: pixel x of row y (y < r) is inside when its centre is within the circle.
+void buildInsets(int radius) {
+    s_corner = radius < kMaxCorner ? radius : kMaxCorner;
+    for (int y = 0; y < s_corner; ++y) {
+        const float dy = static_cast<float>(s_corner) - (static_cast<float>(y) + 0.5f);
+        const float span = __builtin_sqrtf(static_cast<float>(s_corner * s_corner) - dy * dy);
+        const float outside = static_cast<float>(s_corner) - span - 0.5f;
+        int inset = static_cast<int>(outside);
+        if (outside > static_cast<float>(inset)) { ++inset; }
+        s_inset[y] = inset < 0 ? 0 : inset;
     }
 }
 
-// The list page's status line while no warp status is shown: what A does on the cursor row.
-const char* listHint(const MenuView& view, bool spots, bool autosaveRow) {
-#if FAST_TRAVEL_VISITED_ONLY
-    if (!spots && shownAreas(view, view.list) == 0) {
-        return view.list == Age::Adult && !view.visits.adult ? "Opens when Link first grows up" : "No places visited yet";
-    }
-#endif
-    // Link's age differs from the list's: a warp changes his age first (at the Temple of Time).
-    if (view.link != KnownAge::Unknown && (view.link == KnownAge::Young) != (view.list == Age::Young)) {
-        if (spots) { return "A: change age, then warp"; }
-        return view.link == KnownAge::Young ? "Link is young: warps change age" : "Link is adult: warps change age";
-    }
-    if (spots) { return "Pick a spot, then press A"; }
-    if (autosaveRow) { return view.autosave ? "A: turn autosave off" : "A: turn autosave on"; }
-    return "Pick an area, then press A";
-}
-
-const char* listHelp(bool spots, bool autosaveRow) {
-    if (spots) { return "Dpad:move/page  A:warp  B:back"; }
-    return autosaveRow ? "Dpad:move/page  A:switch  B:close" : "Dpad:move/page  A:open  B:close";
-}
-
-// The list ("Autosave", then the areas) or an area's spots.
-void paintList(const MenuView& view) {
-    Line title;
-    title.put(0, view.list == Age::Young ? "FAST TRAVEL: young Link" : "FAST TRAVEL: adult Link");
-    title.putRight(kColumns, view.list == Age::Young ? "X:adult" : "X:young");
-    drawText(0, 0, title.text, kTitle);
-    const bool spots = view.page == Page::Spots;
-    const Area& area = kAreas[view.area];
-    const int listFirst = ageFirst(view.list);
-    const int count = spots ? shownSpots(view, area) : kTopRows + shownAreas(view, view.list);
-    const int cursor = spots ? view.spot : view.areaRow;
-    const int top = spots ? view.spotTop : view.areaTop;
-    Line subtitle;
-    subtitle.put(0, spots ? area.title : "Areas");
-    subtitle.putRight(kColumns, Position(cursor + 1, count).text);
-    drawText(1, 0, subtitle.text, kDim);
-    for (int row = 0; row < kVisibleRows && top + row < count; ++row) {
-        const int i = top + row;
-        const bool selected = i == cursor;
-        Line line;
-        line.put(0, selected ? ">" : " ");
-        if (spots) {
-            line.putRight(kSpotNumberEnd, Number(i + 1).text);
-            line.put(kSpotLabelColumn, kSpots[shownSpot(view, area, i)].label, kSpotLabelLength);
-        } else if (i < kTopRows) {
-            line.put(kAreaTitleColumn, "Autosave", kAreaTitleLength);
-            line.putRight(kAreaCountEnd, view.autosave ? "on" : "off");
-        } else {
-            const Area& rowArea = kAreas[shownArea(view, listFirst, i - kTopRows)];
-            line.put(kAreaTitleColumn, rowArea.title, kAreaTitleLength);
-            line.putRight(kAreaCountEnd, Number(shownSpots(view, rowArea)).text);
-        }
-        drawText(2 + row, 0, line.text, selected ? kSelected : kText);
-    }
-    if (top > 0) { drawText(2, kMarkColumn, "^", kDim); }
-    if (top + kVisibleRows < count) { drawText(1 + kVisibleRows, kMarkColumn, "v", kDim); }
-    const bool autosaveRow = !spots && cursor < kTopRows;
-    const char* status = view.status != Status::Ready ? statusText(view.status) : listHint(view, spots, autosaveRow);
-    drawText(2 + kVisibleRows, 0, status, kStatus);
-    drawText(3 + kVisibleRows, 0, listHelp(spots, autosaveRow), kDim);
+int insetAt(int y) {
+    if (y < s_corner) { return s_inset[y]; }
+    if (y >= s_height - s_corner) { return s_inset[s_height - 1 - y]; }
+    return 0;
 }
 
 void paint(const MenuView& view) {
-    paintFrame();
-    paintList(view);
-    if (s_poolCached && s_api.poolFlush != nullptr) { s_api.poolFlush(&s_pool, 0, s_imageSize); }
+    const int back = s_front ^ 1;
+    // The canvas's pixel layout is the RGBA8 one, so those formats need no conversion.
+    ui::Canvas canvas(reinterpret_cast<u32*>(s_pixels + back * kImageSlotBytes), s_width, s_height, s_stride / 4);
+    ui::paintPanel(canvas, view, s_scale, s_pictures);
+    if (s_imageFormat == kFormatR11G11B10F) {
+        for (int y = 0; y < s_height; ++y) {
+            u32* row = canvas.row(y);
+            for (int x = 0; x < s_width; ++x) {
+                const u32 p = row[x];
+                row[x] = s_lut[0][p & 0xFF] | s_lut[1][(p >> 8) & 0xFF] | s_lut[2][(p >> 16) & 0xFF];
+            }
+        }
+    }
+    if (s_poolCached && s_api.poolFlush != nullptr) {
+        s_api.poolFlush(&s_pool, static_cast<ptrdiff_t>(back * kImageSlotBytes), s_imageSize);
+    }
+    s_front = back;
     s_paintedVersion = view.version;
 }
 
@@ -475,19 +333,22 @@ bool ensurePool() {
 }
 
 // The menu image: linear, in the screen image's format when the module can write that format (RGBA8 otherwise, and
-// the 2D engine converts). Scale 3 at 1000+ rows, else 2: 888x414 or 592x276 pixels.
+// the 2D engine converts). Scale 3 at 1000+ rows, else 2: 1200x525 or 800x350 pixels with pictures, 615x525 or
+// 410x350 for the list alone. The first call looks for picture files on the SD card to choose the layout.
 bool ensureImage(int screenFormat, int screenHeight) {
     const int format = packable(screenFormat) ? screenFormat : kFormatRGBA8;
     const int scale = screenHeight >= 1000 ? 3 : 2;
-    if (s_imageReady && format == s_imageFormat && scale == s_scale) { return true; }
+    const bool pictures = ui::pictures::available();
+    if (s_imageReady && format == s_imageFormat && scale == s_scale && pictures == s_pictures) { return true; }
     if (s_imageFailed || !ensurePool()) { return false; }
     const Api& a = s_api;
     if (s_imageReady) {
-        a.texFinalize(&s_image);
+        a.texFinalize(&s_image[0]);
+        a.texFinalize(&s_image[1]);
         s_imageReady = false;
     }
-    const int width = (kColumns * 8 + 8) * scale;
-    const int height = (kLines * 10 + 8) * scale;
+    const int width = ui::panelWidth(scale, pictures);
+    const int height = ui::panelHeight(scale);
     int alignment = 0;
     if (a.deviceInteger != nullptr) { a.deviceInteger(s_device, kDeviceInfoLinearStrideAlignment, &alignment); }
     const int usedAlignment = (alignment >= 16 && alignment <= 4096 && isPowerOfTwo(alignment)) ? alignment : 256;
@@ -501,24 +362,33 @@ bool ensureImage(int screenFormat, int screenHeight) {
     a.texFlags(&builder, kTextureFlagLinear);
     a.texStride(&builder, stride);
     const size_t bytes = a.texStorageSize(&builder), storageAlignment = a.texStorageAlignment(&builder);
-    if (bytes == 0 || bytes > kImageBytes || static_cast<size_t>(stride) * height > kImageBytes) {
+    if (bytes == 0 || bytes > kImageSlotBytes || static_cast<size_t>(stride) * height > kImageSlotBytes ||
+        kImageSlotBytes % (storageAlignment != 0 ? storageAlignment : 1) != 0) {
         return failImage("image size", static_cast<long long>(bytes));
     }
-    a.texStorage(&builder, &s_pool, 0);
-    if (!a.texInit(&s_image, &builder)) { return failImage("image", format); }
+    for (int i = 0; i < 2; ++i) {
+        a.texStorage(&builder, &s_pool, static_cast<ptrdiff_t>(i * kImageSlotBytes));
+        if (!a.texInit(&s_image[i], &builder)) {
+            if (i == 1) { a.texFinalize(&s_image[0]); }
+            return failImage("image", format);
+        }
+    }
+    s_front = 0;
     s_imageReady = true;
     s_imageFormat = format;
     s_scale = scale;
+    s_pictures = pictures;
     s_width = width;
     s_height = height;
     s_stride = stride;
     s_imageSize = bytes;
     s_paintedVersion = ~0u;
-    for (int i = 0; i < kColors; ++i) { s_packed[i] = pack(kPalette[i], format); }
-    WTLOG("menu image ready: %dx%d, format %d (screen format %d), row stride %d (device alignment %d), %llu bytes, "
-          "storage alignment %llu",
-          width, height, format, screenFormat, stride, alignment, static_cast<unsigned long long>(bytes),
-          static_cast<unsigned long long>(storageAlignment));
+    buildLut(format);
+    buildInsets(ui::panelCorner(scale));
+    WTLOG("menu images ready (two, %s): %dx%d, format %d (screen format %d), row stride %d (device alignment %d), "
+          "%llu bytes, storage alignment %llu",
+          pictures ? "with pictures" : "list only", width, height, format, screenFormat, stride, alignment,
+          static_cast<unsigned long long>(bytes), static_cast<unsigned long long>(storageAlignment));
     return true;
 }
 
@@ -569,25 +439,39 @@ void copyMenu(void* cmd, const void* screen, LayerKind kind) {
     const int format = a.textureFormat(screen);
     const MenuView view = menuView();
     if (!view.open) { return; }
+    int front = 0;
     {
         LockGuard guard(s_imageLock);
         if (!acceptScreen(width, height, format)) { return; }
         if (!ensureImage(format, height)) { return; }
         if (view.version != s_paintedVersion) { paint(view); }
+        front = s_front;
     }
     if (s_width > width || s_height > height) { return; }
-    const int x = width / 40;
+    const int x = width / 40 + s_width <= width ? width / 40 : width - s_width;
     const int y = height - s_height - height / 16;
-    const CopyRegion source{0, 0, 0, s_width, s_height, 1};
-    const CopyRegion target{x, y, 0, s_width, s_height, 1};
     constexpr int kBarrier = kBarrierOrderFragments | kBarrierInvalidateTexture;
     a.barrier(cmd, kBarrier);
-    a.copy(cmd, &s_image, nullptr, &source, screen, nullptr, &target, kCopyEngine2D);
+    // One copy per run of rows with the same inset: the corner runs, then the middle block.
+    int runs = 0;
+    for (int top = 0; top < s_height;) {
+        const int inset = insetAt(top);
+        int bottom = top + 1;
+        while (bottom < s_height && insetAt(bottom) == inset) { ++bottom; }
+        const CopyRegion source{inset, top, 0, s_width - 2 * inset, bottom - top, 1};
+        const CopyRegion target{x + inset, y + top, 0, s_width - 2 * inset, bottom - top, 1};
+        if (source.width > 0) {
+            a.copy(cmd, &s_image[front], nullptr, &source, screen, nullptr, &target, kCopyEngine2D);
+            ++runs;
+        }
+        top = bottom;
+    }
     a.barrier(cmd, kBarrier);
     const u64 copies = ++s_copies;
     if (isPowerOfTwo(copies) && copies <= (1u << 16)) {
-        WTLOG("menu copy %llu in %s: screen %p %dx%d format %d, box at (%d, %d)", static_cast<unsigned long long>(copies),
-              kind == LayerKind::Hud ? "UI 2D" : "UI_2D_Overlay", screen, width, height, format, x, y);
+        WTLOG("menu copy %llu in %s: screen %p %dx%d format %d, panel at (%d, %d) in %d runs",
+              static_cast<unsigned long long>(copies), kind == LayerKind::Hud ? "UI 2D" : "UI_2D_Overlay", screen,
+              width, height, format, x, y, runs);
     }
 }
 
@@ -653,7 +537,11 @@ HOOK_DEFINE_TRAMPOLINE(DrawLayer) {
 
 }  // namespace
 
-void installOverlayHooks() {
+void installOverlayHooks(bool pictureFiles) {
+    const bool fonts = ui::assets::init();
+    if (pictureFiles) { ui::pictures::enable(); }
+    WTLOG("menu fonts %s; area pictures %s", fonts ? "ready" : "malformed: the menu is drawn without text",
+          pictureFiles ? "read from the SD card on first open" : "off (file routines differ)");
     LoadGraphicsProcs::InstallAtOffset(kLoadGraphicsProcs.offset);
     DrawLayer::InstallAtOffset(kDrawLayer.offset);
 }
