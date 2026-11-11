@@ -20,6 +20,23 @@ float roundRectDistance(float px, float py, float x, float y, float w, float h, 
     return __builtin_sqrtf(ox * ox + oy * oy) + minf(maxf(qx, qy), 0.0f) - r;
 }
 
+// On row py of a rounded rectangle, the columns whose distance depends only on the row: there the corner arcs do
+// not reach, and roundRectDistance is qy - r for every column. `lo` > `hi` when there are none.
+struct FlatRun {
+    float d;
+    int lo, hi;
+};
+
+FlatRun flatRun(float py, float x, float y, float w, float h, float r) {
+    const float hw = w * 0.5f, hh = h * 0.5f;
+    r = minf(r, minf(hw, hh));
+    const float qy = absf(py - (y + hh)) - (hh - r);
+    const float span = (hw - r) + minf(qy, 0.0f);
+    if (span < 0.0f) { return {0.0f, 1, 0}; }
+    const float cx = x + hw;
+    return {qy - r, ceilToInt(cx - span - 0.5f), floorToInt(cx + span - 0.5f)};
+}
+
 uint32_t mix(uint32_t dst, Color c, int a) {
     if (a >= 255) { return pack(c); }
     const int r = dst & 0xFF, g = (dst >> 8) & 0xFF, b = (dst >> 16) & 0xFF;
@@ -33,21 +50,21 @@ uint32_t mix(uint32_t dst, Color c, int a) {
 }  // namespace
 
 void Canvas::blend(int x, int y, Color c, int alpha) {
-    if (x < 0 || y < 0 || x >= m_width || y >= m_height || alpha <= 0) { return; }
+    if (x < 0 || y < m_top || x >= m_width || y >= m_bottom || alpha <= 0) { return; }
     uint32_t& p = row(y)[x];
     p = mix(p, c, alpha);
 }
 
 void Canvas::fill(Color c) {
     const uint32_t v = pack(c);
-    for (int y = 0; y < m_height; ++y) {
+    for (int y = m_top; y < m_bottom; ++y) {
         uint32_t* r = row(y);
         for (int x = 0; x < m_width; ++x) { r[x] = v; }
     }
 }
 
 void Canvas::fillGradient(Color top, Color bottom) {
-    for (int y = 0; y < m_height; ++y) {
+    for (int y = m_top; y < m_bottom; ++y) {
         const int t = m_height > 1 ? (y * 255) / (m_height - 1) : 0;
         const Color c{static_cast<uint8_t>(top.r + ((bottom.r - top.r) * t) / 255),
                       static_cast<uint8_t>(top.g + ((bottom.g - top.g) * t) / 255),
@@ -62,10 +79,25 @@ void Canvas::fillRect(float x, float y, float w, float h, Color c) { fillRoundRe
 
 void Canvas::fillRoundRect(float x, float y, float w, float h, float radius, Color c, int alpha) {
     const int x0 = floorToInt(x), y0 = floorToInt(y), x1 = ceilToInt(x + w), y1 = ceilToInt(y + h);
-    for (int py = y0; py < y1; ++py) {
-        if (py < 0 || py >= m_height) { continue; }
-        for (int px = x0; px < x1; ++px) {
-            if (px < 0 || px >= m_width) { continue; }
+    for (int py = y0 > m_top ? y0 : m_top; py < y1 && py < m_bottom; ++py) {
+        const FlatRun run = flatRun(py + 0.5f, x, y, w, h, radius);
+        const int flatAlpha = static_cast<int>(clamp01(0.5f - run.d) * alpha + 0.5f);
+        uint32_t* r = row(py);
+        for (int px = x0 < 0 ? 0 : x0; px < x1 && px < m_width; ++px) {
+            if (px >= run.lo && px <= run.hi) {
+                // Same coverage across the run: blend it without the distance.
+                const int end = run.hi + 1 < x1 ? (run.hi + 1 < m_width ? run.hi + 1 : m_width) : (x1 < m_width ? x1 : m_width);
+                if (flatAlpha > 0) {
+                    if (flatAlpha >= 255) {
+                        const uint32_t v = pack(c);
+                        for (int i = px; i < end; ++i) { r[i] = v; }
+                    } else {
+                        for (int i = px; i < end; ++i) { r[i] = mix(r[i], c, flatAlpha); }
+                    }
+                }
+                px = end - 1;
+                continue;
+            }
             const float d = roundRectDistance(px + 0.5f, py + 0.5f, x, y, w, h, radius);
             const float cover = clamp01(0.5f - d);
             if (cover > 0.0f) { blend(px, py, c, static_cast<int>(cover * alpha + 0.5f)); }
@@ -75,10 +107,23 @@ void Canvas::fillRoundRect(float x, float y, float w, float h, float radius, Col
 
 void Canvas::strokeRoundRect(float x, float y, float w, float h, float radius, float t, Color c) {
     const int x0 = floorToInt(x), y0 = floorToInt(y), x1 = ceilToInt(x + w), y1 = ceilToInt(y + h);
-    for (int py = y0; py < y1; ++py) {
-        if (py < 0 || py >= m_height) { continue; }
-        for (int px = x0; px < x1; ++px) {
-            if (px < 0 || px >= m_width) { continue; }
+    for (int py = y0 > m_top ? y0 : m_top; py < y1 && py < m_bottom; ++py) {
+        const FlatRun outerRun = flatRun(py + 0.5f, x, y, w, h, radius);
+        const FlatRun innerRun = flatRun(py + 0.5f, x + t, y + t, w - 2 * t, h - 2 * t, maxf(radius - t, 0));
+        const int lo = outerRun.lo > innerRun.lo ? outerRun.lo : innerRun.lo;
+        const int hi = outerRun.hi < innerRun.hi ? outerRun.hi : innerRun.hi;
+        const int flatAlpha =
+            static_cast<int>((clamp01(0.5f - outerRun.d) - clamp01(0.5f - innerRun.d)) * 255.0f + 0.5f);
+        for (int px = x0 < 0 ? 0 : x0; px < x1 && px < m_width; ++px) {
+            if (px >= lo && px <= hi) {
+                // Both outlines are straight here, so the stroke's coverage is the same across the run.
+                const int end = hi + 1 < m_width ? hi + 1 : m_width;
+                if (flatAlpha > 0) {
+                    for (int i = px; i < end; ++i) { blend(i, py, c, flatAlpha); }
+                }
+                px = end - 1;
+                continue;
+            }
             const float outer = clamp01(0.5f - roundRectDistance(px + 0.5f, py + 0.5f, x, y, w, h, radius));
             const float inner = clamp01(
                 0.5f - roundRectDistance(px + 0.5f, py + 0.5f, x + t, y + t, w - 2 * t, h - 2 * t, maxf(radius - t, 0)));
@@ -93,13 +138,19 @@ void Canvas::fillCircle(float cx, float cy, float r, Color c) { fillRoundRect(cx
 void Canvas::drawPicture(const uint8_t* rgb, int w, int h, int x, int y, float radius) {
     for (int py = 0; py < h; ++py) {
         const int ty = y + py;
-        if (ty < 0 || ty >= m_height) { continue; }
+        if (ty < m_top || ty >= m_bottom) { continue; }
         uint32_t* r = row(ty);
         const uint8_t* s = rgb + static_cast<size_t>(py) * w * 3;
+        const FlatRun run = flatRun(py + 0.5f, 0.0f, 0.0f, static_cast<float>(w), static_cast<float>(h), radius);
+        const bool flatSolid = run.d <= -0.5f;
         for (int px = 0; px < w; ++px, s += 3) {
             const int tx = x + px;
             if (tx < 0 || tx >= m_width) { continue; }
             const Color c{s[0], s[1], s[2]};
+            if (flatSolid && px >= run.lo && px <= run.hi) {
+                r[tx] = pack(c);
+                continue;
+            }
             const float d = roundRectDistance(px + 0.5f, py + 0.5f, 0.0f, 0.0f, static_cast<float>(w),
                                               static_cast<float>(h), radius);
             const float cover = clamp01(0.5f - d);
@@ -115,7 +166,7 @@ void Canvas::drawPicture(const uint8_t* rgb, int w, int h, int x, int y, float r
 void Canvas::blendMask(const uint8_t* mask, int w, int h, int x, int y, Color c) {
     for (int py = 0; py < h; ++py) {
         const int ty = y + py;
-        if (ty < 0 || ty >= m_height) { continue; }
+        if (ty < m_top || ty >= m_bottom) { continue; }
         uint32_t* r = row(ty);
         const uint8_t* m = mask + static_cast<size_t>(py) * w;
         for (int px = 0; px < w; ++px) {
