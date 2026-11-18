@@ -18,11 +18,18 @@ class Canvas {
 public:
     // `stride` is the distance between rows in pixels (at least `width`).
     Canvas(uint32_t* pixels, int width, int height, int stride)
-        : m_pixels(pixels), m_width(width), m_height(height), m_stride(stride) {}
+        : m_pixels(pixels), m_width(width), m_height(height), m_stride(stride), m_top(0), m_bottom(height) {}
+    // A band of a width x height surface: only rows top..top+rows-1 are stored (from `pixels`), and drawing outside
+    // them is skipped. Painting the whole surface band by band gives the same pixels as painting it at once.
+    Canvas(uint32_t* pixels, int width, int height, int stride, int top, int rows)
+        : m_pixels(pixels), m_width(width), m_height(height), m_stride(stride), m_top(top), m_bottom(top + rows) {}
 
     int width() const { return m_width; }
     int height() const { return m_height; }
-    uint32_t* row(int y) const { return m_pixels + static_cast<size_t>(y) * m_stride; }
+    // Row y of the surface; only valid for stored rows (top() <= y < bottom()).
+    uint32_t* row(int y) const { return m_pixels + static_cast<size_t>(y - m_top) * m_stride; }
+    int top() const { return m_top; }
+    int bottom() const { return m_bottom; }
 
     void fill(Color c);
     // Vertical gradient over the whole surface.
@@ -42,6 +49,7 @@ private:
     void blend(int x, int y, Color c, int alpha);
     uint32_t* m_pixels;
     int m_width, m_height, m_stride;
+    int m_top, m_bottom;
 };
 
 }  // namespace warp::ui

@@ -210,6 +210,11 @@ bool s_poolCached = false;
 bool s_imageReady = false;
 bool s_imageFailed = false;
 unsigned char* s_pixels = nullptr;
+// The panel is painted here first, a band of rows at a time (see paint); the widest panel is 1200 pixels.
+constexpr int kBandRows = 128;
+constexpr int kBandWidth = 1200;
+alignas(16) u32 s_canvas[kBandWidth * kBandRows];
+static_assert(ui::panelWidth(3, true) <= kBandWidth);
 int s_imageFormat = -1, s_scale = 0, s_width = 0, s_height = 0, s_stride = 0;
 bool s_pictures = false;  // the panel layout with pictures (picture files were found on the SD card)
 size_t s_imageSize = 0;
@@ -280,24 +285,38 @@ int insetAt(int y) {
 }
 
 void paint(const MenuView& view) {
+    const u64 t0 = svcGetSystemTick();
     const int back = s_front ^ 1;
-    // The canvas's pixel layout is the RGBA8 one, so those formats need no conversion.
-    ui::Canvas canvas(reinterpret_cast<u32*>(s_pixels + back * kImageSlotBytes), s_width, s_height, s_stride / 4);
-    ui::paintPanel(canvas, view, s_scale, s_pictures);
-    if (s_imageFormat == kFormatR11G11B10F) {
-        for (int y = 0; y < s_height; ++y) {
-            u32* row = canvas.row(y);
+    // Painted in ordinary memory, then written once into the image: the painting reads and blends each pixel several
+    // times, which is slow in the image's memory pool (under an emulator above all). The canvas's pixel layout is the
+    // RGBA8 one, so those formats are a plain copy.
+    unsigned char* image = s_pixels + back * kImageSlotBytes;
+    for (int top = 0; top < s_height; top += kBandRows) {
+        const int rows = s_height - top < kBandRows ? s_height - top : kBandRows;
+        ui::Canvas canvas(s_canvas, s_width, s_height, s_width, top, rows);
+        ui::paintPanel(canvas, view, s_scale, s_pictures);
+        for (int y = top; y < top + rows; ++y) {
+            const u32* src = canvas.row(y);
+            auto* dst = reinterpret_cast<u32*>(image + static_cast<size_t>(y) * s_stride);
+            if (s_imageFormat != kFormatR11G11B10F) {
+                std::memcpy(dst, src, static_cast<size_t>(s_width) * 4);
+                continue;
+            }
             for (int x = 0; x < s_width; ++x) {
-                const u32 p = row[x];
-                row[x] = s_lut[0][p & 0xFF] | s_lut[1][(p >> 8) & 0xFF] | s_lut[2][(p >> 16) & 0xFF];
+                const u32 p = src[x];
+                dst[x] = s_lut[0][p & 0xFF] | s_lut[1][(p >> 8) & 0xFF] | s_lut[2][(p >> 16) & 0xFF];
             }
         }
     }
+    const u64 t1 = svcGetSystemTick();
     if (s_poolCached && s_api.poolFlush != nullptr) {
         s_api.poolFlush(&s_pool, static_cast<ptrdiff_t>(back * kImageSlotBytes), s_imageSize);
     }
     s_front = back;
     s_paintedVersion = view.version;
+    const u64 t2 = svcGetSystemTick();
+    WTLOG("timing: paint %llu us (panel+copy %llu us, flush %llu us)", (t2 - t0) * 1000000 / 19200000,
+          (t1 - t0) * 1000000 / 19200000, (t2 - t1) * 1000000 / 19200000);
 }
 
 bool failImage(const char* what, long long value) {
