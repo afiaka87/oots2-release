@@ -1,0 +1,98 @@
+{
+  "ActorInfo": [
+    {
+      "clone": "Animal_Octopus",
+      "set": {
+        "__RowId": "Obj_Paraglider",
+        "ActorName": "Obj_Paraglider",
+        "FmdbName": "Obj_Paraglider",
+        "ModelProjectName": "Obj_Paraglider",
+        "AnimationResources": [
+          {
+            "ModelProjectName": "Obj_Paraglider_Animation"
+          }
+        ],
+        "ASInfoAutoPlaySkeletals": [
+          {
+            "FileName": "FldObjAutoAnim"
+          }
+        ],
+        "ASInfoAutoPlayMaterials": [
+          {
+            "FileName": "FldObjAutoAnim"
+          },
+          {
+            "FileName": "FldObjWaterAutoAnim"
+          }
+        ],
+        "ModelAabbMin": {
+          "X": -1.334,
+          "Y": -0.384,
+          "Z": -2.531
+        },
+        "ModelAabbMax": {
+          "X": 1.332,
+          "Y": 1.022,
+          "Z": 1.113
+        },
+        "InstanceHeapSize": 524288,
+        "PreActorRenderInfoHeapSize": 65536
+      }
+    },
+    {
+      "clone": "Animal_Octopus",
+      "set": {
+        "__RowId": "Obj_Paraglider_Child",
+        "ActorName": "Obj_Paraglider_Child",
+        "FmdbName": "Obj_Paraglider_Child",
+        "ModelProjectName": "Obj_Paraglider_Child",
+        "AnimationResources": [
+          {
+            "ModelProjectName": "Obj_Paraglider_Child_Animation"
+          }
+        ],
+        "ASInfoAutoPlaySkeletals": [
+          {
+            "FileName": "FldObjAutoAnim"
+          }
+        ],
+        "ASInfoAutoPlayMaterials": [
+          {
+            "FileName": "FldObjAutoAnim"
+          },
+          {
+            "FileName": "FldObjWaterAutoAnim"
+          }
+        ],
+        "ModelAabbMin": {
+          "X": -0.963,
+          "Y": -0.277,
+          "Z": -1.828
+        },
+        "ModelAabbMax": {
+          "X": 0.962,
+          "Y": 0.738,
+          "Z": 0.804
+        },
+        "InstanceHeapSize": 524288,
+        "PreActorRenderInfoHeapSize": 65536
+      }
+    }
+  ],
+  "GameActorInfo": [
+    {
+      "clone": "Animal_Octopus",
+      "set": {
+        "__RowId": "Obj_Paraglider",
+        "MainRigidBodyLayer": "SmallObject"
+      }
+    },
+    {
+      "clone": "Animal_Octopus",
+      "set": {
+        "__RowId": "Obj_Paraglider_Child",
+        "MainRigidBodyLayer": "SmallObject"
+      }
+    }
+  ]
+}

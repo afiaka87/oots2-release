@@ -11,6 +11,8 @@ lives in its own folder with its own README. Downloads are available on GitHub a
 | Hookshot Everything | `hookshot-everything/` | unreleased | none (patch file only) | The hookshot and longshot latch onto any surface, not only the marked targets. |
 | Faster Movement | `faster-movement/` | unreleased | none (patch files only) | Link's animations and swim speeds doubled, with an optional add-on for walking, rolling and climbing. |
 | Climb Anything | `climb-anything/` | unreleased | none (patch file only) | Climb any wall, not only vines and marked surfaces. |
+| Auto Jump | `auto-jump/` | v1.0.0 | none (patch file only) | Link jumps by himself when he runs off a ledge, as in the older versions of the game. The jump button still works. |
+| Camera Follow | `camera-follow/` | v1.0.0 | none (patch files only) | The camera goes back to following Link when you let go of the right stick, as in the older versions of the game. The stick still turns the camera. Game versions 1.0.0 and 2.0.0. |
 
 All code here is MIT-licensed (see `LICENSE`). The code mods use exlaunch. It is not included. See `NOTICE`.
 
