@@ -37,9 +37,10 @@ class Variant:
     name: str
     scale: float
     raise_m: float = 0.0  # lifts the paraglider above the hold point, for hands that end above the grips
+    yaw_deg: float = 0.0  # turns the held paraglider about its up axis; positive turns its front toward its left
 
 
-VARIANTS = (Variant("Obj_Paraglider", 0.9, 0.10), Variant("Obj_Paraglider_Child", 0.65))
+VARIANTS = (Variant("Obj_Paraglider", 0.9, 0.10, -21.0), Variant("Obj_Paraglider_Child", 0.65))
 
 
 def f32(value: float) -> F32:
@@ -225,6 +226,9 @@ def build_pack(game: Game, variant: Variant, animated: bool) -> dict[str, bytes]
     _expect(lift, "PutPosOffset", vector(0.0, -0.2125, -0.025))
     hold = vector(0.0, -GRIP[1] * scale + variant.raise_m, -GRIP[2] * scale)
     lift["LiftPosOffset"], lift["PutPosOffset"] = hold, dict(hold)
+    for key in ("LiftRotateOffset", "PutRotateOffset"):
+        _expect(lift, key, vector(0.0, 0.0, 0.0))
+        lift[key] = vector(0.0, variant.yaw_deg, 0.0)  # Euler degrees, as Item_Bomb's AdditionalLiftRotateOffsets
     files[f"Component/LiftableParam/{name}.game__component__LiftableParam.bgyml"] = _dump(lift)
 
     locators = _tree(cucco, "Phive/LocatorContainerParam/Animal_Cucco.phive__LocatorContainerParam.bgyml")

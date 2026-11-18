@@ -1,4 +1,4 @@
-# Paraglider v0.1.0
+# Paraglider v0.1.1
 
 Adds the paraglider from Tears of the Kingdom to the Ocarina of Time remake on Nintendo Switch 2. Link finds it in a
 new treasure chest in Hyrule Field. With it, jump and press jump again in mid-air: Link holds the paraglider over his
@@ -18,7 +18,13 @@ head and floats down slowly, the way he does with a cucco.
 Tested in game on the emulator (Fritchii v5.8.4 on Windows) with young and adult Link: the chest in Hyrule Field,
 opening the paraglider, its animation, the slow fall and putting it away. The item-get scene was tested with young
 Link. Not tested: adult Link opening the chest (the test save had already opened it), use together with other mods,
-and Switch 2 hardware.
+and Switch 2 hardware. The v0.1.1 fix was checked in game with adult Link floating.
+
+## Changes
+
+- v0.1.1: adult Link's paraglider was turned about 20 degrees to his left; it now faces forward. Nothing else
+  changed.
+- v0.1.0: first release.
 
 ## Requirements and installation
 
