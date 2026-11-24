@@ -1,4 +1,8 @@
-# Fast Travel v1.4.0
+# Fast Travel v1.4.1
+
+Version 1.4.1 makes both patches run in Longshot, the PC port. Pictures are read from the mod's RomFS folder
+first, and the SD card is skipped in Longshot, which has none. The patch builder keeps function addresses in a form
+Longshot can follow.
 
 Version 1.4.0 adds the all-places patch: every area and spot for young and adult Link is in the menu from the start,
 as in the v1.0.0 module, with the v1.3.0 menu. The visited patch is unchanged from v1.3.0 (same file).
@@ -29,6 +33,7 @@ Both images are PC renders of the menu's own drawing code (`src/program/ui/`) at
 - afiaka87: the original Fast Travel mod, and in v1.3.0 the patch-file build of the picture menu, the list-only
   layout, the larger menu, the JPEG reader for SD-card pictures, and the L3 + R3 chord; in v1.4.0 the all-places
   patch.
+- theotherp: in v1.4.1 the Longshot support.
 
 ## What changed from pull request #1
 
@@ -197,7 +202,8 @@ The text uses Inter and Cinzel (SIL Open Font License 1.1), drawn ahead of time 
 The feature source is in `src/program/`. The patch builder, startup code, and hook adapters are in `patch/`. The game
 calls are resolved against your own dump.
 
-The build used devkitA64 GCC 16.1.0. Prepare a local input directory containing flattened `main.bin` and `sdk.bin` at
+The v1.4.1 patches were built with devkitA64 GCC 15.2.0 (v1.4.0 with GCC 16.1.0); another compiler gives
+other SHA-256 values. Prepare a local input directory containing flattened `main.bin` and `sdk.bin` at
 their NSO memory offsets, `main.uncompressed.nso` with its valid NSO header, and the original SDK NSO at
 `extract/exefs/sdk`. Keep these inputs outside the source checkout. From the Fast Travel folder, run the following with
 your paths.
@@ -214,14 +220,14 @@ Use the pchtxt for installation. The two versions are listed once in `patch/buil
 `tools/preview.cpp` draws the menu on a PC in both layouts, and `tools/host/jpeg_check.cpp` runs the JPEG reader on a
 PC; the build commands are at the top of each file.
 
-The tested v1.4.0 patches have these SHA-256 values:
+The v1.4.1 patches have these SHA-256 values:
 
-- all places: `fce813454a066cb0a288a766d2625032a86be326e57c90ea3588976073692b88`
-- visited (the same file as v1.3.0): `d3b9046246e3b45818cf5e70d86705e2f0cb5925841c5fef1834ff9d9477ae25`
+- all places (not tested in game): `c559ee3b99e9d1cc8b8f22f4c2b45c668c78253d2855621dde368dccc635c4f3`
+- visited (tested in Longshot): `591ba0a2fe4b5935ef8126087515dd73edc7bb719690b043ad9e30f253aa63b2`
 
 ## Known issues
 
-- The subsdk module build is not updated for v1.3.0 or v1.4.0; the subsdk5 downloads are the older v1.0.0 and
+- The subsdk module build is not updated for v1.3.0 or later; the subsdk5 downloads are the older v1.0.0 and
   v1.1.0.
 - Moving the cursor to an area decodes its large picture, and the first menu open decodes the thumbnails shown. In
   Fritchii on the test PC that took about 60 to 70 ms per large picture and 35 to 45 ms per thumbnail for 960 x 540
