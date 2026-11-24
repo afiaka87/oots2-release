@@ -36,6 +36,16 @@ patch_sdk_mount_sdcard:
     sub x0, x0, #MOUNT_BACK_LOW
     ret
 
+// svcGetInfo's wrapper in the SDK, right after the debug output routine.
+.section .text.patch_sdk_get_info,"ax"
+.global patch_sdk_get_info
+patch_sdk_get_info:
+    adrp x0, patch_tick_slot
+    ldr x0, [x0, :lo12:patch_tick_slot]
+    add x0, x0, #DEBUG_DELTA_PAGES, lsl #12
+    add x0, x0, #(DEBUG_DELTA_LOW + 8)
+    ret
+
 .macro hook name, bit, first_word, plt
     .section .text.patch_gate_\name,"ax"
     .global patch_gate_\name

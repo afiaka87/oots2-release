@@ -1,5 +1,6 @@
-// The area pictures: the player's own JPEG files on the SD card, fast-travel/pictures/<GameBancParam name>.jpg
-// (baseline JPEG, any size; 16:9 is shown whole, other shapes are cropped to 16:9 about the centre). Each is decoded
+// The area pictures: the player's own JPEG files, fast-travel/pictures/<GameBancParam name>.jpg in the game's RomFS (a
+// mod's romfs folder) or else on the SD card, which Longshot does not have (baseline JPEG, any size; 16:9 is shown
+// whole, other shapes are cropped to 16:9 about the centre). Each is decoded
 // and scaled when the menu first shows it: the thumbnails are kept, and the cursor's area keeps its large picture.
 // Without any picture file the menu shows the list alone.
 #pragma once
@@ -15,7 +16,7 @@ struct Picture {
 
 namespace pictures {
 
-// Allows reading the SD card; called once at start-up when the game's file routines matched.
+// Allows reading the picture files; called once at start-up when the game's file routines matched.
 void enable();
 
 // True when at least one area's picture file opens; the first call looks. The answer does not change later.

@@ -72,14 +72,36 @@ Fritchii v5.5. Both patches target game version 2.0.0 (update v131072), main bui
    The patches and those mods can use the same game hooks.
 5. Start the game from the game list. Press L3 and R3 together after loading a save.
 
+### Longshot
+
+[Longshot](https://git.magicbean.dev/MagicBeanDev/Longshot), the PC port, builds a mod's `.pchtxt` into the game when it
+builds the game, so the same patch files work there.
+
+1. In the Longshot game folder, make a `mods` folder beside `bin` if there is none. Copy the `fast-travel-patch-all`
+   output folder into it as `Fast Travel (All Places Patch)`, or the `fast-travel-patch` output folder as
+   `Fast Travel (Visited Patch)`. Each holds an `exefs` folder with the `.pchtxt` in it.
+2. Optional: add pictures to that folder's `romfs/fast-travel/pictures/` (see "Adding pictures"). Longshot has no SD
+   card.
+3. Leave only one Fast Travel folder switched on (on the Insert menu's Mods tab, or by starting the other folder's name
+   with `_`).
+4. Build the game again from the launcher. Patch files apply only at a build; the Mods tab says when one is waiting.
+   `exefs_patches.txt` in the game folder lists the patch as `code` once it is in.
+
+Versions before v1.4.1 stop the game the first time the menu opens in Longshot: they look for pictures on the SD card
+through the SDK, and Longshot does not provide the SD card.
+
 ## Adding pictures
 
-The mod includes no pictures. To see pictures in the menu, make one JPEG file per area and copy them to the
-`fast-travel/pictures/` folder on the SD card:
+The mod includes no pictures. To see pictures in the menu, make one JPEG file per area and copy them to a
+`fast-travel/pictures/` folder in one of two places. The menu looks in the first one, then in the second:
 
-- In Lichii or Fritchii on Windows the folder is `%APPDATA%\eden\sdmc\fast-travel\pictures\`. In other emulators it
-  is `fast-travel/pictures/` inside the emulator's `sdmc` folder. On a Switch 2 it is `fast-travel/pictures/` at the
-  root of the microSD card (not tested on hardware).
+- The add-on folder's RomFS: `romfs/fast-travel/pictures/` inside the folder that holds `exefs`. This is the only place
+  that works in Longshot. Emulators and Atmosphere add a mod's `romfs` files to the game the same way (not tested
+  with this mod).
+- The SD card (not in Longshot). In Lichii or Fritchii on Windows the folder is
+  `%APPDATA%\eden\sdmc\fast-travel\pictures\`. In other emulators it is `fast-travel/pictures/` inside the
+  emulator's `sdmc` folder. On a Switch 2 it is `fast-travel/pictures/` at the root of the microSD card (not tested on
+  hardware).
 - Name each file exactly as in the table below, including upper and lower case. Some areas share a picture.
 - Use baseline JPEG, colour or grey. Progressive JPEG is not read: if a picture stays empty, save it again with the
   "progressive" option turned off. Most editors save baseline by default.
