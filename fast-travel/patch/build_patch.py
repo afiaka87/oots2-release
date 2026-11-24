@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import hashlib
 import json
 import os
@@ -203,7 +204,8 @@ def load_imports(main: bytes) -> tuple[dict[str, int], dict[str, int]]:
 
 
 def sdk_deltas(game_dir: Path) -> tuple[int, int]:
-    """Distances from the SDK's tick export to its debug output routine and to nn::fs::MountSdCard."""
+    """Distances from the SDK's tick export to its debug output routine (svcGetInfo's wrapper follows it) and to
+    nn::fs::MountSdCard."""
     header = (game_dir / "extract/exefs/sdk").read_bytes()[:0x100]
     if header[:4] != b"NSO0" or header[0x40:0x54].hex().upper() != SDK_BUILD_ID:
         raise ValueError("sdk build differs from the one the boots used")
@@ -213,6 +215,9 @@ def sdk_deltas(game_dir: Path) -> tuple[int, int]:
         raise ValueError("sdk tick export changed")
     if sdk.count(bytes.fromhex("e10400d4c0035fd6")) != 1 or sdk.find(bytes.fromhex("e10400d4c0035fd6")) != debug:
         raise ValueError("sdk debug output routine (svc 0x27; ret) is not unique")
+    # svcGetInfo's wrapper follows it; src/program/ui/pictures.cpp checks the same words.
+    if sdk[debug + 8:debug + 32] != bytes.fromhex("e00f1ff8210500d4e20340f9410000f9ff430091c0035fd6"):
+        raise ValueError("sdk info routine (svc 0x29) does not follow the debug output routine")
     # _ZN2nn2fs11MountSdCardEPKc's export value; src/program/ui/pictures.cpp checks the same first words.
     if sdk[mount:mount + 16] != bytes.fromhex("7f2303d5ff0301d1fd7b01a9f51300f9"):
         raise ValueError("sdk SD card mount routine changed")
@@ -471,6 +476,51 @@ def read_object(path: Path, externals: dict[str, int], hooks: list[tuple[str, in
         return Module(text, symbols, code_relocs, data_relocs, data, region_bytes)
 
 
+def takes_code_address(module: Module, pc: int, word: int, kind: int, dest: int) -> bool:
+    """An ADRP forming a compiled function's address, with its ADD on the same register right after it."""
+    if kind != 275 or not CODE <= dest < DATA or (word & 0x9F000000) != 0x90000000:
+        return False
+    add_kind, add_dest = module.code_relocs.get(pc + 4, (0, 0))
+    following = next((u32(data, pc + 4 - base) for base, data in module.text if base <= pc + 4 < base + len(data)), 0)
+    return add_kind == 277 and add_dest == dest and (following & 0xFF800000) == 0x91000000 and \
+        (following >> 5) & 31 == word & 31
+
+
+def fde_spans(main: bytes) -> list[tuple[int, int]]:
+    """(start, end) of each function main's .eh_frame_hdr table points to an FDE for."""
+    mod0 = u32(main, 4)
+    hdr = mod0 + struct.unpack_from("<i", main, mod0 + 0x10)[0]
+    if main[hdr] != 1 or main[hdr + 2] != 0x03 or main[hdr + 3] != 0x3B:
+        raise ValueError("main's .eh_frame_hdr has an unexpected encoding")
+    spans = []
+    for i in range(u32(main, hdr + 8)):
+        loc, fde = struct.unpack_from("<ii", main, hdr + 12 + 8 * i)
+        loc, fde = hdr + loc, hdr + fde
+        length, cie, begin, size = struct.unpack_from("<IIiI", main, fde)
+        if length >= 12 and cie != 0 and fde + 8 + begin == loc:
+            spans.append((loc, loc + size))
+    return sorted(spans)
+
+
+def check_taken_addresses(kit: patchkit.PatchKit, module: Module, mapped: dict[int, int]) -> None:
+    """Longshot (the PC port) compiles the game ahead of time and can call through a pointer only into functions it
+    found. It finds a function that only has its address taken from ADR, or ADRP with an ADD on the same register
+    within the next four instructions, and not when the address is inside a game function's unwind range
+    (Longshot nx2/adr_entries.py). Every compiled function whose address is taken must meet that."""
+    spans = fde_spans(kit.image)
+    starts = [start for start, _ in spans]
+    for pc, (kind, dest) in sorted(module.code_relocs.items()):
+        if kind not in (274, 275) or not CODE <= dest < DATA:
+            continue
+        name = next((n for n, a in module.symbols.items() if a == dest), f"{dest:#x}")
+        if kind == 275 and mapped[pc + 4] != mapped[pc] + 4:
+            raise ValueError(f"the address of {name} is formed by an ADRP and ADD that are not side by side")
+        target = mapped[dest]
+        i = bisect.bisect_right(starts, target) - 1
+        if i >= 0 and spans[i][0] < target < spans[i][1]:
+            raise ValueError(f"{name} starts inside the game function at {spans[i][0]:#x}")
+
+
 def place_code(module: Module, pool: Gaps):
     """Assign physical words, preserving fallthrough without using scratch registers or changing flags."""
     mapped, connectors, placed = {}, {}, []
@@ -492,6 +542,8 @@ def place_code(module: Module, pool: Gaps):
             else:
                 count = 1
             needed = count + int(not (terminal or conditional))
+            if takes_code_address(module, pc, word, kind, dest):
+                needed += 1  # the ADD stays beside its ADRP (check_taken_addresses)
             if end - cursor < 4 * needed:
                 old_cursor, old_end = cursor, end
                 cursor, capacity = pool.take(needed, largest=not (terminal or conditional))
@@ -629,6 +681,7 @@ def layout(kit: patchkit.PatchKit, out: Path, obj: Path, hooks, externals: dict[
     gaps = find_gaps(kit)
     pool = Gaps(gaps)
     mapped, connectors, placed = place_code(module, pool)
+    check_taken_addresses(kit, module, mapped)
     head, chunks = emit_state(kit, module, mapped, pool)
     left = sum(n * len(at) for n, at in pool.free.items())
     print(f"gaps left: {sum(len(at) for at in pool.free.values())} gaps, {left} words; room for about "

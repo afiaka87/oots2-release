@@ -1,4 +1,8 @@
-# Fast Travel v1.4.0
+# Fast Travel v1.4.1
+
+Version 1.4.1 makes both patches run in Longshot, the PC port. Pictures are read from the mod's RomFS folder
+first, and the SD card is skipped in Longshot, which has none. The patch builder keeps function addresses in a form
+Longshot can follow.
 
 Version 1.4.0 adds the all-places patch: every area and spot for young and adult Link is in the menu from the start,
 as in the v1.0.0 module, with the v1.3.0 menu. The visited patch is unchanged from v1.3.0 (same file).
@@ -29,6 +33,7 @@ Both images are PC renders of the menu's own drawing code (`src/program/ui/`) at
 - afiaka87: the original Fast Travel mod, and in v1.3.0 the patch-file build of the picture menu, the list-only
   layout, the larger menu, the JPEG reader for SD-card pictures, and the L3 + R3 chord; in v1.4.0 the all-places
   patch.
+- theotherp: in v1.4.1 the Longshot support.
 
 ## What changed from pull request #1
 
@@ -72,14 +77,36 @@ Fritchii v5.5. Both patches target game version 2.0.0 (update v131072), main bui
    The patches and those mods can use the same game hooks.
 5. Start the game from the game list. Press L3 and R3 together after loading a save.
 
+### Longshot
+
+[Longshot](https://git.magicbean.dev/MagicBeanDev/Longshot), the PC port, builds a mod's `.pchtxt` into the game when it
+builds the game, so the same patch files work there.
+
+1. In the Longshot game folder, make a `mods` folder beside `bin` if there is none. Copy the `fast-travel-patch-all`
+   output folder into it as `Fast Travel (All Places Patch)`, or the `fast-travel-patch` output folder as
+   `Fast Travel (Visited Patch)`. Each holds an `exefs` folder with the `.pchtxt` in it.
+2. Optional: add pictures to that folder's `romfs/fast-travel/pictures/` (see "Adding pictures"). Longshot has no SD
+   card.
+3. Leave only one Fast Travel folder switched on (on the Insert menu's Mods tab, or by starting the other folder's name
+   with `_`).
+4. Build the game again from the launcher. Patch files apply only at a build; the Mods tab says when one is waiting.
+   `exefs_patches.txt` in the game folder lists the patch as `code` once it is in.
+
+Versions before v1.4.1 stop the game the first time the menu opens in Longshot: they look for pictures on the SD card
+through the SDK, and Longshot does not provide the SD card.
+
 ## Adding pictures
 
-The mod includes no pictures. To see pictures in the menu, make one JPEG file per area and copy them to the
-`fast-travel/pictures/` folder on the SD card:
+The mod includes no pictures. To see pictures in the menu, make one JPEG file per area and copy them to a
+`fast-travel/pictures/` folder in one of two places. The menu looks in the first one, then in the second:
 
-- In Lichii or Fritchii on Windows the folder is `%APPDATA%\eden\sdmc\fast-travel\pictures\`. In other emulators it
-  is `fast-travel/pictures/` inside the emulator's `sdmc` folder. On a Switch 2 it is `fast-travel/pictures/` at the
-  root of the microSD card (not tested on hardware).
+- The add-on folder's RomFS: `romfs/fast-travel/pictures/` inside the folder that holds `exefs`. This is the only place
+  that works in Longshot. Emulators and Atmosphere add a mod's `romfs` files to the game the same way (not tested
+  with this mod).
+- The SD card (not in Longshot). In Lichii or Fritchii on Windows the folder is
+  `%APPDATA%\eden\sdmc\fast-travel\pictures\`. In other emulators it is `fast-travel/pictures/` inside the
+  emulator's `sdmc` folder. On a Switch 2 it is `fast-travel/pictures/` at the root of the microSD card (not tested on
+  hardware).
 - Name each file exactly as in the table below, including upper and lower case. Some areas share a picture.
 - Use baseline JPEG, colour or grey. Progressive JPEG is not read: if a picture stays empty, save it again with the
   "progressive" option turned off. Most editors save baseline by default.
@@ -175,7 +202,8 @@ The text uses Inter and Cinzel (SIL Open Font License 1.1), drawn ahead of time 
 The feature source is in `src/program/`. The patch builder, startup code, and hook adapters are in `patch/`. The game
 calls are resolved against your own dump.
 
-The build used devkitA64 GCC 16.1.0. Prepare a local input directory containing flattened `main.bin` and `sdk.bin` at
+The v1.4.1 patches were built with devkitA64 GCC 15.2.0 (v1.4.0 with GCC 16.1.0); another compiler gives
+other SHA-256 values. Prepare a local input directory containing flattened `main.bin` and `sdk.bin` at
 their NSO memory offsets, `main.uncompressed.nso` with its valid NSO header, and the original SDK NSO at
 `extract/exefs/sdk`. Keep these inputs outside the source checkout. From the Fast Travel folder, run the following with
 your paths.
@@ -192,14 +220,14 @@ Use the pchtxt for installation. The two versions are listed once in `patch/buil
 `tools/preview.cpp` draws the menu on a PC in both layouts, and `tools/host/jpeg_check.cpp` runs the JPEG reader on a
 PC; the build commands are at the top of each file.
 
-The tested v1.4.0 patches have these SHA-256 values:
+The v1.4.1 patches have these SHA-256 values:
 
-- all places: `fce813454a066cb0a288a766d2625032a86be326e57c90ea3588976073692b88`
-- visited (the same file as v1.3.0): `d3b9046246e3b45818cf5e70d86705e2f0cb5925841c5fef1834ff9d9477ae25`
+- all places (not tested in game): `c559ee3b99e9d1cc8b8f22f4c2b45c668c78253d2855621dde368dccc635c4f3`
+- visited (tested in Longshot): `591ba0a2fe4b5935ef8126087515dd73edc7bb719690b043ad9e30f253aa63b2`
 
 ## Known issues
 
-- The subsdk module build is not updated for v1.3.0 or v1.4.0; the subsdk5 downloads are the older v1.0.0 and
+- The subsdk module build is not updated for v1.3.0 or later; the subsdk5 downloads are the older v1.0.0 and
   v1.1.0.
 - Moving the cursor to an area decodes its large picture, and the first menu open decodes the thumbnails shown. In
   Fritchii on the test PC that took about 60 to 70 ms per large picture and 35 to 45 ms per thumbnail for 960 x 540
